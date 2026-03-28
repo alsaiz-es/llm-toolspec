@@ -39,14 +39,15 @@ Authentication, rate limits, streaming support, session management, base URL. Ev
 
 ```json
 {
-  "base_url": "https://api.jfr-analyzer.example.com/v1",
+  "base_url": "https://musicbrainz.org/ws/2",
   "auth": {
-    "schemes": [{ "type": "oauth2", "flow": "client_credentials", "token_url": "..." }]
+    "required": false,
+    "schemes": [{ "type": "none", "description": "No auth for read-only requests. User-Agent header is mandatory." }]
   },
   "capabilities": {
-    "streaming": true,
-    "async_tasks": true,
-    "max_payload_bytes": 2147483648
+    "streaming": false,
+    "async_tasks": false,
+    "rate_limit": { "requests_per_minute": 50 }
   }
 }
 ```
@@ -57,13 +58,21 @@ Each tool maps to an HTTP endpoint with typed parameters and responses. Like Ope
 
 ```json
 {
-  "name": "analyze_hot_methods",
-  "description": "Identifies the hottest methods by CPU execution time from a JFR recording.",
-  "when_to_use": "When investigating CPU performance issues or slow response times.",
-  "endpoint": { "method": "POST", "path": "/recordings/{recording_id}/analysis/hot-methods" },
-  "parameters": { ... },
-  "response": { ... },
-  "estimated_duration_seconds": 10,
+  "name": "search_artists",
+  "description": "Searches the artist index using Lucene query syntax. Fields: alias, artist, country, tag, type, etc.",
+  "when_to_use": "When finding an artist by name, country, type, or tag. Use to resolve names to MBIDs.",
+  "endpoint": { "method": "GET", "path": "/artist" },
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "query": { "type": "string", "description": "Lucene query. Ex: 'radiohead', 'artist:bjork AND type:person'." },
+      "fmt": { "type": "string", "enum": ["json"] },
+      "limit": { "type": "integer", "default": 25 },
+      "offset": { "type": "integer", "default": 0 }
+    },
+    "required": ["query", "fmt"]
+  },
+  "estimated_duration_seconds": 3,
   "idempotent": true
 }
 ```
@@ -75,20 +84,26 @@ The layer that doesn't exist anywhere else. Domain expertise encoded as workflow
 ```json
 {
   "knowledge": {
-    "domain": "JVM Performance Analysis",
+    "domain": "Music metadata (MusicBrainz)",
+    "system_context": "MusicBrainz has a strict entity hierarchy: Artist → Release Group → Release → Medium → Track → Recording. Lookup inc= caps at 25 linked entities — always use browse for complete lists.",
     "workflows": [
       {
-        "name": "cpu_bottleneck_investigation",
-        "trigger": "User reports slow response times or high CPU",
+        "name": "artist_discography",
+        "trigger": "When a user asks for an artist's albums, discography, or complete releases.",
         "steps": [
-          "Start with analyze_hot_methods to identify CPU consumers",
-          "If top methods are in JDBC layer, run analyze_jdbc_events",
-          "If lock contention appears, run analyze_thread_contention",
-          "Cross-reference with analyze_gc if allocation rate is high"
+          "search_artists to resolve name to MBID",
+          "browse_release_groups with artist= and type=album for full discography",
+          "browse_releases with release-group= for all editions of an album",
+          "lookup_release with inc=recordings+artist-credits for tracklist"
         ],
-        "interpretation": "An N+1 pattern shows as repetitive JDBC executions with identical SQL templates. Roundtrips per operation above 10 is suspicious, above 100 is critical."
+        "interpretation": "Release groups are album concepts; releases are specific editions. Always browse release-groups first."
       }
-    ]
+    ],
+    "glossary": {
+      "MBID": "MusicBrainz Identifier — UUID uniquely identifying any entity.",
+      "Release Group": "Abstract grouping of releases (the 'album concept').",
+      "Recording": "Unique audio entity. Same recording across many tracks/releases."
+    }
   }
 }
 ```
@@ -164,7 +179,7 @@ All through an MCP proxy with zero MusicBrainz-specific logic — just HTTP call
 
 **The descriptor is the product.** Providers don't distribute code — they publish a URL. Consumers don't install anything — they fetch a JSON file. This is how APIs work. It's how LLM tools should work.
 
-**Knowledge is a first-class layer.** The gap between "here are 47 functions" and "here's how to diagnose a JVM performance problem" is where all the value lives. ToolSpec makes that explicit and portable.
+**Knowledge is a first-class layer.** The gap between "here are 46 endpoints" and "here's how to navigate from an artist to a tracklist" is where all the value lives. ToolSpec makes that explicit and portable.
 
 **Vendor-agnostic by construction.** The spec doesn't reference any provider's format. The SDK handles translation. Write one descriptor, consumed by any LLM.
 
