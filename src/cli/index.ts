@@ -36,7 +36,8 @@ program
   .command("connect")
   .description("Generate an MCP server proxy from a remote ToolSpec")
   .argument("<source>", "Path to a .toolspec.json file or a URL")
-  .action(async (source: string) => {
+  .option("--user-agent <string>", "Custom User-Agent header (required by some APIs like MusicBrainz)")
+  .action(async (source: string, options: { userAgent?: string }) => {
     try {
       const spec = source.startsWith("http")
         ? await ToolSpec.fromUrl(source)
@@ -46,7 +47,7 @@ program
       console.error(`  Tools: ${spec.toolNames.join(", ")}`);
       console.error(`  Base URL: ${spec.descriptor.base_url}`);
 
-      await startMcpServer(spec.descriptor);
+      await startMcpServer(spec.descriptor, { userAgent: options.userAgent });
     } catch (err) {
       console.error(`✗ Failed: ${(err as Error).message}`);
       process.exit(1);

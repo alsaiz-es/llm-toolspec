@@ -7,6 +7,8 @@ export interface ExecuteOptions {
   sessionId?: string;
   /** Request timeout in milliseconds */
   timeoutMs?: number;
+  /** Custom User-Agent header. Some APIs (e.g., MusicBrainz) require an identifiable User-Agent. */
+  userAgent?: string;
 }
 
 export interface ExecuteResult {
@@ -109,7 +111,7 @@ function buildHeaders(
 ): Record<string, string> {
   const headers: Record<string, string> = {
     "Accept": "application/json",
-    "User-Agent": "toolspec-sdk/0.1",
+    "User-Agent": options.userAgent ?? "toolspec-sdk/0.1",
   };
 
   if (tool.endpoint.method !== "GET" && tool.endpoint.method !== "DELETE") {
