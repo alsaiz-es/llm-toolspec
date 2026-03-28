@@ -183,7 +183,8 @@ export interface InstallResult {
 export async function installToClaudeDesktop(
   source: string,
   descriptor: ToolSpecDescriptor,
-  configPath?: string
+  configPath?: string,
+  userAgent?: string
 ): Promise<InstallResult> {
   const resolvedPath = configPath ?? getClaudeDesktopConfigPath();
 
@@ -214,9 +215,14 @@ export async function installToClaudeDesktop(
   // Use the absolute path to this CLI so it works from any cwd
   const resolvedSource = source.startsWith("http") ? source : resolve(source);
 
+  const args = ["toolspec", "connect", resolvedSource];
+  if (userAgent) {
+    args.push("--user-agent", userAgent);
+  }
+
   servers[serverName] = {
     command: "npx",
-    args: ["toolspec", "connect", resolvedSource],
+    args,
   };
 
   // Ensure the parent directory exists

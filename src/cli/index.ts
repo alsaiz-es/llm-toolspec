@@ -59,13 +59,14 @@ program
   .description("Install a ToolSpec as an MCP server in Claude Desktop")
   .argument("<source>", "Path to a .toolspec.json file or a URL")
   .option("--config <path>", "Custom path to claude_desktop_config.json")
-  .action(async (source: string, options: { config?: string }) => {
+  .option("--user-agent <string>", "Custom User-Agent header (required by some APIs like MusicBrainz)")
+  .action(async (source: string, options: { config?: string; userAgent?: string }) => {
     try {
       const spec = source.startsWith("http")
         ? await ToolSpec.fromUrl(source)
         : await ToolSpec.fromFile(source);
 
-      const result = await installToClaudeDesktop(source, spec.descriptor, options.config);
+      const result = await installToClaudeDesktop(source, spec.descriptor, options.config, options.userAgent);
 
       console.log(`✓ Installed "${result.serverName}" in Claude Desktop`);
       console.log(`  Config: ${result.configPath}${result.created ? " (created)" : ""}`);

@@ -81,4 +81,4 @@ Full tracklist, 12 tracks:
 
 The full chain `Artist -> Release Group -> Release -> Recording` navigated without gaps, across 5 tool calls — all through an MCP proxy with zero MusicBrainz-specific logic. The proxy just routes HTTP calls based on the `toolspec.json` descriptor.
 
-This is what ToolSpec enables: any API becomes a set of LLM tools by publishing a JSON descriptor. No plugins, no custom code, no local processes.
+This is what ToolSpec enables: any API becomes a set of LLM tools by publishing a JSON descriptor. No plugins, no API-specific code — just a generic proxy that routes HTTP calls based on the descriptor.
