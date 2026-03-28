@@ -178,7 +178,7 @@ export interface InstallResult {
  * Install a ToolSpec as an MCP server entry in Claude Desktop's config.
  *
  * Reads the existing config (or creates one), adds/updates an mcpServers entry
- * that runs `npx tsx <cli> connect <source>`, and writes it back.
+ * that runs `npx toolspec connect <source>`, and writes it back.
  */
 export async function installToClaudeDesktop(
   source: string,

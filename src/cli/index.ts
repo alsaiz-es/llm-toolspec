@@ -9,7 +9,7 @@ const program = new Command();
 
 program
   .name("toolspec")
-  .description("Open LLM Tool Specification CLI")
+  .description("ToolSpec CLI — semantic manifest for remote APIs consumed by LLMs")
   .version("0.1.0");
 
 program
@@ -35,14 +35,12 @@ program
 program
   .command("connect")
   .description("Generate an MCP server proxy from a remote ToolSpec")
-  .argument("<url>", "URL of the ToolSpec descriptor or base domain")
-  .option("--output <dir>", "Output directory", ".")
-  .option("--provider <name>", "LLM provider format (anthropic|openai)", "anthropic")
-  .action(async (url: string) => {
+  .argument("<source>", "Path to a .toolspec.json file or a URL")
+  .action(async (source: string) => {
     try {
-      const spec = url.startsWith("http")
-        ? await ToolSpec.fromUrl(url)
-        : await ToolSpec.fromFile(url);
+      const spec = source.startsWith("http")
+        ? await ToolSpec.fromUrl(source)
+        : await ToolSpec.fromFile(source);
 
       console.error(`✓ Connected: ${spec.name} (${spec.toolNames.length} tools)`);
       console.error(`  Tools: ${spec.toolNames.join(", ")}`);

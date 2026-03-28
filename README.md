@@ -139,11 +139,11 @@ The descriptor is vendor-agnostic. The SDK translates it to whatever the consume
   toolspec.json
        │
        ├──► MCP server (auto-generated proxy, routes HTTP calls to remote API)
-       ├──► Native tool defs (Anthropic / OpenAI / Google format)
+       ├──► Native tool defs (Anthropic / OpenAI format, more planned)
        └──► System prompt (knowledge layer injection)
 ```
 
-Right now the primary consumer is an MCP proxy for Claude Desktop, but the same descriptor can feed OpenAI function calling, Google tools, or any other LLM client.
+Right now the primary consumer is an MCP proxy for Claude Desktop. The SDK also translates to Anthropic and OpenAI function calling formats, with more providers planned.
 
 ## Related
 
