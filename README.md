@@ -1,65 +1,19 @@
-# Open LLM Tool Specification (ToolSpec)
+# ToolSpec
 
-**A vendor-agnostic standard for describing, discovering, and consuming LLM tool services over HTTP.**
+**A semantic manifest for remote APIs consumed by LLMs.**
 
-## The problem
+ToolSpec complements OpenAPI and MCP instead of replacing them. OpenAPI describes endpoints; MCP exposes runtime tools; ToolSpec adds the metadata LLMs need to **choose the right tool** and **chain multi-step calls**: `when_to_use` guidance, workflow examples, and an optional domain knowledge layer.
 
-LLMs can call external tools — but the ecosystem for publishing and consuming those tools is fragmented and stuck in a local-first model that doesn't scale.
+Use it when a remote API is technically callable but models still struggle to select the right endpoint or sequence calls correctly.
 
-| | MCP | OpenAPI | Function Calling |
-|---|---|---|---|
-| Designed for LLMs | ✓ | ✗ | ✓ |
-| Remote-native (no local component) | ✗ | ✓ | ✗ |
-| Vendor-agnostic | Partial | ✓ | ✗ |
-| Domain knowledge layer | ✗ | ✗ | ✗ |
-| Auto-discovery | Partial | ✗ | ✗ |
-| Workflow examples | ✗ | ✗ | ✗ |
+## What it looks like
 
-**MCP** requires a local server process — fine for dev tools, unworkable for publishing services at scale. Every consumer runs your code locally, exposing your IP and requiring per-user setup.
-
-**OpenAPI** is remote-native but was designed for human developers, not LLMs. It lacks semantic guidance (when to call a tool, how to chain calls, what results mean) and has no concept of domain knowledge.
-
-**Function Calling** varies by provider (OpenAI, Anthropic, Google all use different schemas) with no portability.
-
-None of them answer the real question: **how does an LLM reason *with* a set of tools, not just call them?**
-
-## The proposal
-
-ToolSpec is a JSON descriptor published at a well-known URL that tells any LLM everything it needs to discover, understand, and consume a remote tool service. No local installation. No vendor lock-in. Pure HTTP.
-
-```
-GET https://api.example.com/.well-known/toolspec.json
-```
-
-The descriptor has three layers:
-
-### Layer 1 — Service (how to connect)
-
-Authentication, rate limits, streaming support, session management, base URL. Everything an HTTP client needs to establish a connection.
-
-```json
-{
-  "base_url": "https://musicbrainz.org/ws/2",
-  "auth": {
-    "required": false,
-    "schemes": [{ "type": "none", "description": "No auth for read-only requests. User-Agent header is mandatory." }]
-  },
-  "capabilities": {
-    "streaming": false,
-    "async_tasks": false,
-    "rate_limit": { "requests_per_minute": 50 }
-  }
-}
-```
-
-### Layer 2 — Tools (what to call)
-
-Each tool maps to an HTTP endpoint with typed parameters and responses. Like OpenAPI, but enriched with LLM-specific metadata: `when_to_use` (natural language guidance for tool selection), `estimated_duration`, error semantics, and streaming options.
+### `when_to_use` — tool selection guidance
 
 ```json
 {
   "name": "search_artists",
-  "description": "Searches the artist index using Lucene query syntax. Fields: alias, artist, country, tag, type, etc.",
+  "description": "Searches the artist index using Lucene query syntax.",
   "when_to_use": "When finding an artist by name, country, type, or tag. Use to resolve names to MBIDs.",
   "endpoint": { "method": "GET", "path": "/artist" },
   "parameters": {
@@ -67,8 +21,7 @@ Each tool maps to an HTTP endpoint with typed parameters and responses. Like Ope
     "properties": {
       "query": { "type": "string", "description": "Lucene query. Ex: 'radiohead', 'artist:bjork AND type:person'." },
       "fmt": { "type": "string", "enum": ["json"] },
-      "limit": { "type": "integer", "default": 25 },
-      "offset": { "type": "integer", "default": 0 }
+      "limit": { "type": "integer", "default": 25 }
     },
     "required": ["query", "fmt"]
   },
@@ -77,9 +30,33 @@ Each tool maps to an HTTP endpoint with typed parameters and responses. Like Ope
 }
 ```
 
-### Layer 3 — Knowledge (how to reason)
+The `description` explains **what** the tool does. The `when_to_use` explains **when** to pick it. Both are needed — this is what makes LLMs choose correctly.
 
-The layer that doesn't exist anywhere else. Domain expertise encoded as workflows, interpretation guides, and glossaries. This turns a bag of tools into a *skill*.
+### Workflow examples — multi-step chaining
+
+```json
+{
+  "examples": [
+    {
+      "description": "Full artist discography: search → albums → tracklist → recording detail",
+      "steps": [
+        { "tool": "search_artists", "input": { "query": "radiohead", "fmt": "json" },
+          "note": "Resolve artist name to MBID." },
+        { "tool": "browse_release_groups", "input": { "artist": "${step_1.artists[0].id}", "type": "album" },
+          "note": "Get full album discography." },
+        { "tool": "lookup_release", "input": { "mbid": "${step_2.release-groups[0].id}", "inc": "recordings" },
+          "note": "Get tracklist with recording MBIDs." },
+        { "tool": "lookup_recording", "input": { "mbid": "${step_3.media[0].tracks[0].recording.id}", "inc": "tags+genres" },
+          "note": "Get recording details." }
+      ]
+    }
+  ]
+}
+```
+
+The `${step_N.field}` syntax teaches the LLM how to extract values from one call and feed them into the next.
+
+### Knowledge layer — domain expertise
 
 ```json
 {
@@ -89,14 +66,13 @@ The layer that doesn't exist anywhere else. Domain expertise encoded as workflow
     "workflows": [
       {
         "name": "artist_discography",
-        "trigger": "When a user asks for an artist's albums, discography, or complete releases.",
+        "trigger": "When a user asks for an artist's albums or discography.",
         "steps": [
           "search_artists to resolve name to MBID",
-          "browse_release_groups with artist= and type=album for full discography",
-          "browse_releases with release-group= for all editions of an album",
-          "lookup_release with inc=recordings+artist-credits for tracklist"
-        ],
-        "interpretation": "Release groups are album concepts; releases are specific editions. Always browse release-groups first."
+          "browse_release_groups with artist= and type=album",
+          "browse_releases with release-group= for editions",
+          "lookup_release with inc=recordings for tracklist"
+        ]
       }
     ],
     "glossary": {
@@ -108,13 +84,31 @@ The layer that doesn't exist anywhere else. Domain expertise encoded as workflow
 }
 ```
 
+Skip the knowledge layer for simple CRUD APIs. Use it when the domain has concepts, hierarchies, or interpretation patterns the LLM wouldn't know from general training.
+
+## Demo: MusicBrainz
+
+We generated a ToolSpec descriptor for the [MusicBrainz API](https://musicbrainz.org/doc/MusicBrainz_API) — 46 tools covering every endpoint — and installed it as an MCP proxy in Claude Desktop.
+
+Then we asked Claude to find the tracklist of OK Computer. It chained 5 calls autonomously:
+
+```text
+search_artists("radiohead") → found MBID
+  → browse_release_groups → 382 release groups (albums, singles, EPs...)
+    → browse_releases → 38 editions of OK Computer
+      → lookup_release → 12 tracks
+        → lookup_recording → Paranoid Android, 6:24, art rock
+```
+
+Zero MusicBrainz-specific logic in the proxy. Just HTTP calls routed by the JSON descriptor. [Full demo walkthrough](demos/musicbrainz-mcp.md).
+
 ## Quick start
 
 ```bash
 # Install
 npm install toolspec
 
-# Validate a descriptor
+# Validate a descriptor against the JSON Schema
 npx toolspec validate musicbrainz.toolspec.json
 
 # Start MCP server that proxies to the remote API
@@ -127,92 +121,49 @@ npx toolspec install musicbrainz.toolspec.json
 npx toolspec inspect musicbrainz.toolspec.json --provider anthropic
 ```
 
-## How it works
+## The three layers
+
+A ToolSpec descriptor is a JSON file with three layers:
+
+**Layer 1 — Service**: base URL, authentication, rate limits, capabilities. Everything an HTTP client needs to connect.
+
+**Layer 2 — Tools**: each tool maps to an endpoint with typed parameters, response schemas, `when_to_use` guidance, duration estimates, and error definitions. Like OpenAPI, but with LLM-facing semantics.
+
+**Layer 3 — Knowledge** (optional): domain context, named workflows with triggers, interpretation guides, and glossaries. This turns a bag of tools into a coherent skill.
+
+## Architecture
+
+The descriptor is vendor-agnostic. The SDK translates it to whatever the consumer needs:
 
 ```text
-  PROVIDER                         CONSUMER (any LLM client)
-  ────────                         ──────────────────────────
-
-  ┌─────────────────┐   HTTPS GET   ┌─────────────────────┐
-  │  Your service    │◄──────────────│  LLM Client SDK     │
-  │  (runs on your   │  /.well-known │  (Python/TS/etc)    │
-  │   infra)         │  /toolspec.json│                     │
-  │                  ├──────────────►│  1. Fetch descriptor │
-  │  ┌────────────┐  │               │  2. Translate to     │
-  │  │ Your logic │  │   HTTPS POST  │     native tool defs │
-  │  │ Your data  │  │◄──────────────│     (OpenAI/Claude/  │
-  │  │ Your IP    │  │               │      Gemini/etc)     │
-  │  └────────────┘  │  Tool results │  3. Inject knowledge │
-  │                  ├──────────────►│     as context        │
-  └─────────────────┘               │  4. Execute via HTTP  │
-                                    └─────────────────────┘
-                                              │
-                                              ▼
-                                    ┌─────────────────────┐
-                                    │  Any LLM             │
-                                    │  (Claude, GPT,       │
-                                    │   Gemini, Llama...) │
-                                    └─────────────────────┘
+  toolspec.json
+       │
+       ├──► MCP server (auto-generated proxy, routes HTTP calls to remote API)
+       ├──► Native tool defs (Anthropic / OpenAI / Google format)
+       └──► System prompt (knowledge layer injection)
 ```
 
-**Provider side:** Publish a `toolspec.json` at a well-known URL. Your logic runs on your infrastructure. Your IP stays protected. No code distribution.
-
-**Consumer side:** A lightweight SDK fetches the descriptor, translates Layer 2 (tools) into the native function calling format of whatever LLM you're using, injects Layer 3 (knowledge) as system prompt context, and routes tool calls as HTTP requests to the provider's endpoints.
-
-## Demo: MusicBrainz
-
-The [MusicBrainz demo](demos/musicbrainz-mcp.md) shows a complete end-to-end flow with 46 tools running as an MCP proxy in Claude Desktop:
-
-```
-search_artists("radiohead")
-  → browse_release_groups(artist: "a74b1b7f...")  → 382 albums
-    → browse_releases(release-group: "b1392450...")  → 38 editions of OK Computer
-      → lookup_release(mbid: "c7569949...", inc: "recordings")  → 12-track tracklist
-        → lookup_recording(mbid: "...", inc: "tags+genres")  → Paranoid Android, 6:24
-```
-
-All through an MCP proxy with zero MusicBrainz-specific logic — just HTTP calls routed by the `toolspec.json` descriptor.
-
-## Key design decisions
-
-**Remote-first, not remote-capable.** MCP bolted remote support onto a local-first design. ToolSpec assumes HTTP from day one. No stdio, no JSON-RPC, no local process.
-
-**The descriptor is the product.** Providers don't distribute code — they publish a URL. Consumers don't install anything — they fetch a JSON file. This is how APIs work. It's how LLM tools should work.
-
-**Knowledge is a first-class layer.** The gap between "here are 46 endpoints" and "here's how to navigate from an artist to a tracklist" is where all the value lives. ToolSpec makes that explicit and portable.
-
-**Vendor-agnostic by construction.** The spec doesn't reference any provider's format. The SDK handles translation. Write one descriptor, consumed by any LLM.
-
-## Comparison
-
-| Feature | ToolSpec | MCP | OpenAPI | ChatGPT Plugins (dead) |
-|---|---|---|---|---|
-| Remote-native | ✓ | Partial | ✓ | ✓ |
-| LLM-aware semantics | ✓ | ✓ | ✗ | Partial |
-| Domain knowledge layer | ✓ | ✗ | ✗ | ✗ |
-| Workflow examples | ✓ | ✗ | ✗ | ✗ |
-| Vendor-agnostic | ✓ | Partial | ✓ | ✗ (OpenAI only) |
-| IP protection | ✓ (remote) | ✗ (local) | ✓ (remote) | ✓ (remote) |
-| Auto-discovery | ✓ (.well-known) | Partial | ✗ | ✓ (ai-plugin.json) |
-| State management | ✓ (server-side) | ✗ | ✗ | ✗ |
-| Streaming | ✓ | ✓ | ✗ | ✗ |
+Right now the primary consumer is an MCP proxy for Claude Desktop, but the same descriptor can feed OpenAI function calling, Google tools, or any other LLM client.
 
 ## Related
 
-- [toolspec-generator](https://github.com/alsaiz-es/toolspec-generator) — Claude Desktop skill that generates ToolSpec descriptors from API documentation
+- [toolspec-generator](https://github.com/alsaiz-es/toolspec-generator) — Claude Desktop skill that generates ToolSpec descriptors from API documentation automatically
 
 ## Roadmap
 
 - [x] **v0.1 Spec** — JSON Schema for the three-layer descriptor
-- [x] **Reference SDK** — TypeScript SDK with translator (OpenAI/Anthropic), executor, and MCP proxy generator
-- [x] **Example service** — MusicBrainz API (46 tools, full entity hierarchy, knowledge layer)
-- [x] **CLI** — `validate`, `connect`, `install`, `inspect` commands
-- [ ] **Python SDK** — Reference implementation in Python
-- [ ] **Registry** — Directory of published ToolSpec services
+- [x] **TypeScript SDK** — loader, translator (OpenAI/Anthropic), executor, MCP proxy generator
+- [x] **CLI** — `validate`, `connect`, `install`, `inspect`
+- [x] **Schema validation** — full Ajv validation against the JSON Schema
+- [x] **Example** — MusicBrainz API (46 tools, knowledge layer, workflow examples)
+- [ ] **OpenAPI importer** — convert OpenAPI specs to ToolSpec descriptors
+- [ ] **Python SDK**
+- [ ] **Additional examples** — more real-world APIs beyond MusicBrainz
+- [ ] **Evals** — reproducible benchmarks comparing tool selection/chaining with and without ToolSpec metadata
 
 ## Contributing
 
-This is an open specification. We welcome contributions to the spec, SDKs, and tooling.
+Contributions welcome — spec improvements, SDK ports, new API examples, and eval harnesses.
 
 ## License
 

@@ -212,11 +212,11 @@ export async function installToClaudeDesktop(
 
   // Build the command that Claude Desktop will run
   // Use the absolute path to this CLI so it works from any cwd
-  const cliPath = new URL("../cli/index.ts", import.meta.url).pathname;
+  const resolvedSource = source.startsWith("http") ? source : resolve(source);
 
   servers[serverName] = {
     command: "npx",
-    args: ["tsx", cliPath, "connect", source.startsWith("http") ? source : resolve(source)],
+    args: ["toolspec", "connect", resolvedSource],
   };
 
   // Ensure the parent directory exists

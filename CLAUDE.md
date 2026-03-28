@@ -2,7 +2,7 @@
 
 ## Project overview
 
-**Open LLM Tool Specification (ToolSpec)** — a vendor-agnostic standard for describing, discovering, and consuming LLM tool services over HTTP. Think "OpenAPI for LLM tools" but with three layers: Service (how to connect), Tools (what to call), and Knowledge (how to reason).
+**ToolSpec** — a semantic manifest for remote APIs consumed by LLMs. Complements OpenAPI and MCP by adding the metadata LLMs need to choose tools and chain calls: `when_to_use` guidance, workflow examples, and an optional knowledge layer. Three layers: Service (how to connect), Tools (what to call), and Knowledge (how to reason).
 
 ## Architecture
 
