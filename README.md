@@ -199,7 +199,7 @@ All through an MCP proxy with zero MusicBrainz-specific logic — just HTTP call
 
 ## Related
 
-- [toolspec-generator](https://github.com/alsaiz/toolspec-generator) — Claude Desktop skill that generates ToolSpec descriptors from API documentation
+- [toolspec-generator](https://github.com/alsaiz-es/toolspec-generator) — Claude Desktop skill that generates ToolSpec descriptors from API documentation
 
 ## Roadmap
 
