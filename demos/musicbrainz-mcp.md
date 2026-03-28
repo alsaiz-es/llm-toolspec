@@ -7,7 +7,7 @@ End-to-end demo of the ToolSpec MCP proxy running in Claude Desktop, navigating 
 The MusicBrainz ToolSpec (46 tools) was generated with the [toolspec-generator](https://github.com/alsaiz-es/toolspec-generator) skill and installed as an MCP server:
 
 ```bash
-npx tsx src/cli/index.ts install musicbrainz.toolspec.json
+npx toolspec install musicbrainz.toolspec.json
 # Restart Claude Desktop
 ```
 

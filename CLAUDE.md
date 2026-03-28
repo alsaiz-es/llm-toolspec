@@ -71,8 +71,8 @@ npm install          # Install dependencies
 npm run build        # Compile TypeScript
 npm run dev          # Watch mode
 npm run test         # Run tests with vitest
-npx tsx src/cli/index.ts validate spec/examples/musicbrainz.toolspec.json  # Validate example
-npx tsx src/cli/index.ts connect https://example.com                    # Generate MCP proxy
+npx toolspec validate spec/examples/musicbrainz.toolspec.json  # Validate example
+npx toolspec connect https://example.com                       # Generate MCP proxy
 ```
 
 ## Code style

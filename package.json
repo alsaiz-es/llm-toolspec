@@ -1,7 +1,7 @@
 {
   "name": "toolspec",
   "version": "0.1.0",
-  "description": "Open LLM Tool Specification — vendor-agnostic standard for publishing LLM-consumable tool services over HTTP",
+  "description": "ToolSpec — a semantic manifest for remote APIs consumed by LLMs",
   "type": "module",
   "bin": {
     "toolspec": "./dist/cli/index.js"
