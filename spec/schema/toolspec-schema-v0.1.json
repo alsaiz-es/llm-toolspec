@@ -1,0 +1,375 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://toolspec.org/schema/v0.1/toolspec.json",
+  "title": "Open LLM Tool Specification (ToolSpec) v0.1",
+  "description": "A vendor-agnostic descriptor for publishing LLM-consumable tool services over HTTP.",
+  "type": "object",
+  "required": ["toolspec", "service", "base_url", "tools"],
+  "additionalProperties": false,
+
+  "properties": {
+
+    "toolspec": {
+      "type": "string",
+      "description": "ToolSpec version this descriptor conforms to.",
+      "enum": ["0.1"]
+    },
+
+    "service": {
+      "type": "object",
+      "description": "Metadata about the service provider.",
+      "required": ["name", "description", "version"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Human-readable service name.",
+          "maxLength": 100
+        },
+        "description": {
+          "type": "string",
+          "description": "What this service does. Written for LLMs: should help the model decide whether this service is relevant to a user's request.",
+          "maxLength": 1000
+        },
+        "version": {
+          "type": "string",
+          "description": "Service version (semver recommended).",
+          "pattern": "^[0-9a-zA-Z._-]+$"
+        },
+        "provider": {
+          "type": "object",
+          "description": "Organization or person publishing this service.",
+          "properties": {
+            "name": { "type": "string" },
+            "url": { "type": "string", "format": "uri" },
+            "contact": { "type": "string" }
+          }
+        },
+        "tags": {
+          "type": "array",
+          "description": "Searchable tags for service discovery.",
+          "items": { "type": "string", "maxLength": 50 },
+          "maxItems": 20
+        }
+      }
+    },
+
+    "base_url": {
+      "type": "string",
+      "description": "Base URL for all tool endpoints. Tool paths are appended to this.",
+      "format": "uri"
+    },
+
+    "auth": {
+      "type": "object",
+      "description": "Authentication configuration. At least one scheme is required if the service requires auth.",
+      "properties": {
+        "required": {
+          "type": "boolean",
+          "description": "Whether authentication is required to call tools.",
+          "default": true
+        },
+        "schemes": {
+          "type": "array",
+          "description": "Supported authentication schemes, in order of preference.",
+          "items": {
+            "type": "object",
+            "required": ["type"],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["api_key", "bearer", "oauth2", "none"],
+                "description": "Authentication type."
+              },
+              "header": {
+                "type": "string",
+                "description": "Header name for api_key or bearer auth.",
+                "default": "Authorization"
+              },
+              "token_url": {
+                "type": "string",
+                "format": "uri",
+                "description": "Token endpoint for oauth2."
+              },
+              "flow": {
+                "type": "string",
+                "enum": ["client_credentials", "authorization_code"],
+                "description": "OAuth2 flow type."
+              },
+              "scopes": {
+                "type": "object",
+                "description": "Available OAuth2 scopes.",
+                "additionalProperties": { "type": "string" }
+              },
+              "description": {
+                "type": "string",
+                "description": "Human-readable instructions for obtaining credentials."
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "capabilities": {
+      "type": "object",
+      "description": "Service-level capabilities and limits.",
+      "additionalProperties": false,
+      "properties": {
+        "streaming": {
+          "type": "boolean",
+          "description": "Whether any tools support streaming responses.",
+          "default": false
+        },
+        "async_tasks": {
+          "type": "boolean",
+          "description": "Whether tools can return async task IDs for long-running operations.",
+          "default": false
+        },
+        "webhooks": {
+          "type": "boolean",
+          "description": "Whether the service can push results to a callback URL.",
+          "default": false
+        },
+        "max_payload_bytes": {
+          "type": "integer",
+          "description": "Maximum request body size in bytes."
+        },
+        "default_timeout_seconds": {
+          "type": "integer",
+          "description": "Default timeout for tool calls.",
+          "default": 30
+        },
+        "rate_limit": {
+          "type": "object",
+          "properties": {
+            "requests_per_minute": { "type": "integer" },
+            "daily_limit": { "type": "integer" }
+          }
+        }
+      }
+    },
+
+    "state": {
+      "type": "object",
+      "description": "How the service manages state across tool calls.",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["stateless", "server_managed"],
+          "description": "stateless = each call is independent. server_managed = service tracks state via session.",
+          "default": "stateless"
+        },
+        "session": {
+          "type": "object",
+          "description": "Session configuration for server_managed state.",
+          "properties": {
+            "header": {
+              "type": "string",
+              "description": "Header name to pass session identifier.",
+              "default": "X-Session-Id"
+            },
+            "ttl_seconds": {
+              "type": "integer",
+              "description": "How long a session lives without activity."
+            }
+          }
+        }
+      }
+    },
+
+    "tools": {
+      "type": "array",
+      "description": "The tools this service exposes.",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/tool"
+      }
+    },
+
+    "examples": {
+      "type": "array",
+      "description": "Multi-step workflow examples showing how tools can be chained.",
+      "items": {
+        "$ref": "#/$defs/workflow_example"
+      }
+    },
+
+    "knowledge": {
+      "type": "object",
+      "description": "Optional domain knowledge layer. Helps LLMs reason with the tools, especially in specialized domains.",
+      "$ref": "#/$defs/knowledge"
+    }
+  },
+
+  "$defs": {
+
+    "tool": {
+      "type": "object",
+      "required": ["name", "description", "endpoint"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Unique tool identifier. Must be a valid function name (lowercase, underscores).",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "maxLength": 64
+        },
+        "description": {
+          "type": "string",
+          "description": "What this tool does. Written for LLMs.",
+          "maxLength": 500
+        },
+        "when_to_use": {
+          "type": "string",
+          "description": "Natural language guidance for the LLM on when to select this tool.",
+          "maxLength": 500
+        },
+        "endpoint": {
+          "type": "object",
+          "required": ["method", "path"],
+          "additionalProperties": false,
+          "properties": {
+            "method": {
+              "type": "string",
+              "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+            },
+            "path": {
+              "type": "string",
+              "description": "Path appended to base_url. May contain {param} placeholders."
+            },
+            "content_type": {
+              "type": "string",
+              "description": "Request content type.",
+              "default": "application/json"
+            }
+          }
+        },
+        "parameters": {
+          "type": "object",
+          "description": "JSON Schema describing the tool's input parameters. Path parameters (matching {param} in endpoint.path) are extracted automatically.",
+          "properties": {
+            "type": { "type": "string", "const": "object" },
+            "properties": { "type": "object" },
+            "required": {
+              "type": "array",
+              "items": { "type": "string" }
+            }
+          }
+        },
+        "response": {
+          "type": "object",
+          "description": "JSON Schema describing the expected response. Helps the LLM interpret results."
+        },
+        "errors": {
+          "type": "array",
+          "description": "Known error responses.",
+          "items": {
+            "type": "object",
+            "required": ["code", "description"],
+            "properties": {
+              "code": { "type": "integer" },
+              "description": { "type": "string" }
+            }
+          }
+        },
+        "estimated_duration_seconds": {
+          "type": "number",
+          "description": "Typical execution time. Helps clients decide sync vs async."
+        },
+        "idempotent": {
+          "type": "boolean",
+          "description": "Whether the tool can be safely retried.",
+          "default": false
+        },
+        "streaming": {
+          "type": "object",
+          "description": "Streaming response configuration, if supported.",
+          "properties": {
+            "supported": { "type": "boolean" },
+            "format": {
+              "type": "string",
+              "enum": ["application/x-ndjson", "text/event-stream"],
+              "description": "Streaming format."
+            }
+          }
+        }
+      }
+    },
+
+    "workflow_example": {
+      "type": "object",
+      "required": ["description", "steps"],
+      "properties": {
+        "description": {
+          "type": "string",
+          "description": "What this workflow demonstrates."
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["tool"],
+            "properties": {
+              "tool": {
+                "type": "string",
+                "description": "Name of the tool to call."
+              },
+              "input": {
+                "type": "object",
+                "description": "Example input. May use ${step_N.field} references to previous step outputs."
+              },
+              "note": {
+                "type": "string",
+                "description": "Explanation of this step."
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "knowledge": {
+      "type": "object",
+      "properties": {
+        "domain": {
+          "type": "string",
+          "description": "The knowledge domain this service covers."
+        },
+        "system_context": {
+          "type": "string",
+          "description": "Text injected as system prompt context when using these tools. Should describe the domain, common patterns, and interpretation guidance.",
+          "maxLength": 5000
+        },
+        "workflows": {
+          "type": "array",
+          "description": "Named reasoning workflows the LLM should follow.",
+          "items": {
+            "type": "object",
+            "required": ["name", "trigger", "steps"],
+            "properties": {
+              "name": { "type": "string" },
+              "trigger": {
+                "type": "string",
+                "description": "When to activate this workflow (natural language)."
+              },
+              "steps": {
+                "type": "array",
+                "items": { "type": "string" }
+              },
+              "interpretation": {
+                "type": "string",
+                "description": "How to interpret results from this workflow."
+              }
+            }
+          }
+        },
+        "glossary": {
+          "type": "object",
+          "description": "Domain-specific terms the LLM might not know.",
+          "additionalProperties": { "type": "string" }
+        }
+      }
+    }
+  }
+}

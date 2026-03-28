@@ -1,0 +1,695 @@
+{
+  "toolspec": "0.1",
+
+  "service": {
+    "name": "MusicBrainz",
+    "description": "Open music encyclopedia providing structured metadata about artists, releases, recordings, labels, works, and more. Supports three core operations per entity: lookup by MBID, Lucene-powered search, and browse of linked entities with pagination. Also supports non-MBID lookups by disc ID, ISRC, and ISWC. All responses are JSON when fmt=json is specified. Requires a descriptive User-Agent header; requests without one are rejected with HTTP 403. Rate-limited to 1 request per second per IP.",
+    "version": "2.0.0",
+    "provider": {
+      "name": "MetaBrainz Foundation",
+      "url": "https://musicbrainz.org",
+      "contact": "support@metabrainz.org"
+    },
+    "tags": ["music", "metadata", "artists", "releases", "recordings", "labels", "works", "open-data", "musicbrainz", "MBID"]
+  },
+
+  "base_url": "https://musicbrainz.org/ws/2",
+
+  "auth": {
+    "required": false,
+    "schemes": [
+      {
+        "type": "none",
+        "description": "No authentication for read-only GET requests. A custom User-Agent header is MANDATORY (e.g., 'MyApp/1.0 (contact@example.com)'). Requests with a generic or missing User-Agent receive HTTP 403. POST requests (tag/rating/ISRC/barcode submission) require OAuth or HTTP digest authentication."
+      }
+    ]
+  },
+
+  "capabilities": {
+    "streaming": false,
+    "async_tasks": false,
+    "default_timeout_seconds": 15,
+    "rate_limit": {
+      "requests_per_minute": 50
+    }
+  },
+
+  "state": {
+    "type": "stateless"
+  },
+
+  "tools": [
+
+    {
+      "name": "lookup_area",
+      "description": "Retrieves detailed information about a specific area by MBID. Areas represent geographic regions (countries, cities, subdivisions). Supports inc= for aliases, annotation, tags, genres, ratings, and relationship types (*-rels).",
+      "when_to_use": "When you have an area MBID and want details about that geographic region, its ISO codes, or its relationships to other entities.",
+      "endpoint": { "method": "GET", "path": "/area/{mbid}" },
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "mbid": { "type": "string", "description": "Area MBID (UUID)." },
+          "fmt": { "type": "string", "enum": ["json"], "description": "Response format." },
+          "inc": { "type": "string", "description": "Subqueries joined with '+'. Valid: aliases, annotation, tags, genres, ratings, and any *-rels (e.g., area-rels, artist-rels, url-rels)." }
+        },
+        "required": ["mbid", "fmt"]
+      },
+      "response": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" }, "name": { "type": "string" }, "type": { "type": "string" },
+          "sort-name": { "type": "string" },
+          "iso-3166-1-codes": { "type": "array", "items": { "type": "string" } },
+          "iso-3166-2-codes": { "type": "array", "items": { "type": "string" } },
+          "life-span": { "type": "object", "properties": { "begin": { "type": "string" }, "end": { "type": "string" }, "ended": { "type": "boolean" } } },
+          "aliases": { "type": "array", "items": { "type": "object" } },
+          "relations": { "type": "array", "items": { "type": "object" } }
+        }
+      },
+      "errors": [
+        { "code": 400, "description": "Invalid MBID or inc parameter." },
+        { "code": 404, "description": "Area not found." },
+        { "code": 403, "description": "Missing User-Agent header." },
+        { "code": 503, "description": "Rate limit exceeded." }
+      ],
+      "estimated_duration_seconds": 2,
+      "idempotent": true
+    },
+
+    {
+      "name": "lookup_artist",
+      "description": "Retrieves detailed information about a specific artist by MBID. Supports subquery inc= to include linked entities: recordings, releases, release-groups, works. Also supports aliases, annotation, tags, genres, ratings, and all *-rels. When including releases or release-groups, filter with type= and status=. Linked entities capped at 25; use browse for full lists.",
+      "when_to_use": "When you have an artist MBID and want full details, optionally including their releases, works, tags, or relationships.",
+      "endpoint": { "method": "GET", "path": "/artist/{mbid}" },
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "mbid": { "type": "string", "description": "Artist MBID (UUID)." },
+          "fmt": { "type": "string", "enum": ["json"], "description": "Response format." },
+          "inc": { "type": "string", "description": "Subqueries joined with '+'. Entity includes: recordings, releases, release-groups, works. Modifiers: aliases, annotation, tags, genres, ratings, discids, media, isrcs, artist-credits, various-artists. Rels: area-rels, artist-rels, event-rels, label-rels, place-rels, recording-rels, release-rels, release-group-rels, series-rels, url-rels, work-rels." },
+          "type": { "type": "string", "description": "Filter included release-groups/releases by type: album, single, ep, broadcast, other, compilation, live, remix, soundtrack, etc." },
+          "status": { "type": "string", "description": "Filter included releases by status: official, promotion, bootleg, pseudo-release, withdrawn, cancelled." }
+        },
+        "required": ["mbid", "fmt"]
+      },
+      "response": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" }, "name": { "type": "string" }, "sort-name": { "type": "string" },
+          "type": { "type": "string", "description": "Person, Group, Orchestra, Choir, Character, Other." },
+          "country": { "type": "string" }, "disambiguation": { "type": "string" }, "gender": { "type": "string" },
+          "area": { "type": "object", "properties": { "id": { "type": "string" }, "name": { "type": "string" } } },
+          "begin-area": { "type": "object", "properties": { "id": { "type": "string" }, "name": { "type": "string" } } },
+          "end-area": { "type": "object", "properties": { "id": { "type": "string" }, "name": { "type": "string" } } },
+          "life-span": { "type": "object", "properties": { "begin": { "type": "string" }, "end": { "type": "string" }, "ended": { "type": "boolean" } } },
+          "ipis": { "type": "array", "items": { "type": "string" } },
+          "isnis": { "type": "array", "items": { "type": "string" } },
+          "releases": { "type": "array", "description": "When inc=releases. Max 25.", "items": { "type": "object", "properties": { "id": { "type": "string" }, "title": { "type": "string" }, "status": { "type": "string" }, "date": { "type": "string" }, "country": { "type": "string" }, "release-group": { "type": "object" }, "track-count": { "type": "integer" } } } },
+          "release-groups": { "type": "array", "description": "When inc=release-groups. Max 25.", "items": { "type": "object", "properties": { "id": { "type": "string" }, "title": { "type": "string" }, "primary-type": { "type": "string" }, "secondary-types": { "type": "array", "items": { "type": "string" } } } } },
+          "recordings": { "type": "array", "description": "When inc=recordings. Max 25." },
+          "works": { "type": "array", "description": "When inc=works. Max 25." },
+          "aliases": { "type": "array" }, "tags": { "type": "array" }, "genres": { "type": "array" }, "relations": { "type": "array" }
+        }
+      },
+      "errors": [
+        { "code": 400, "description": "Invalid MBID or inc combination. Cannot combine recordings and releases in one lookup." },
+        { "code": 404, "description": "Artist not found. Search by name first." },
+        { "code": 403, "description": "Missing User-Agent header." },
+        { "code": 503, "description": "Rate limit exceeded." }
+      ],
+      "estimated_duration_seconds": 3,
+      "idempotent": true
+    },
+
+    {
+      "name": "lookup_event",
+      "description": "Retrieves detailed information about a specific event by MBID. Events represent concerts, festivals, etc. Supports inc= for aliases, annotation, tags, genres, ratings, and *-rels.",
+      "when_to_use": "When you have an event MBID and want details about a concert, festival, or other music event.",
+      "endpoint": { "method": "GET", "path": "/event/{mbid}" },
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "mbid": { "type": "string", "description": "Event MBID (UUID)." },
+          "fmt": { "type": "string", "enum": ["json"] },
+          "inc": { "type": "string", "description": "Valid: aliases, annotation, tags, genres, ratings, and *-rels." }
+        },
+        "required": ["mbid", "fmt"]
+      },
+      "response": { "type": "object", "properties": { "id": { "type": "string" }, "name": { "type": "string" }, "type": { "type": "string" }, "disambiguation": { "type": "string" }, "cancelled": { "type": "boolean" }, "time": { "type": "string" }, "setlist": { "type": "string" }, "life-span": { "type": "object" }, "relations": { "type": "array" } } },
+      "errors": [ { "code": 404, "description": "Event not found." }, { "code": 403, "description": "Missing User-Agent." }, { "code": 503, "description": "Rate limit." } ],
+      "estimated_duration_seconds": 2, "idempotent": true
+    },
+
+    {
+      "name": "lookup_genre",
+      "description": "Retrieves information about a specific genre by MBID. No inc parameters supported.",
+      "when_to_use": "When you have a genre MBID and want its details.",
+      "endpoint": { "method": "GET", "path": "/genre/{mbid}" },
+      "parameters": { "type": "object", "properties": { "mbid": { "type": "string" }, "fmt": { "type": "string", "enum": ["json"] } }, "required": ["mbid", "fmt"] },
+      "response": { "type": "object", "properties": { "id": { "type": "string" }, "name": { "type": "string" }, "disambiguation": { "type": "string" } } },
+      "errors": [ { "code": 404, "description": "Genre not found." }, { "code": 403, "description": "Missing User-Agent." } ],
+      "estimated_duration_seconds": 1, "idempotent": true
+    },
+
+    {
+      "name": "lookup_instrument",
+      "description": "Retrieves detailed information about a specific instrument by MBID. Supports inc= for aliases, annotation, tags, genres, ratings, and *-rels.",
+      "when_to_use": "When you have an instrument MBID and want its description and relationships.",
+      "endpoint": { "method": "GET", "path": "/instrument/{mbid}" },
+      "parameters": { "type": "object", "properties": { "mbid": { "type": "string" }, "fmt": { "type": "string", "enum": ["json"] }, "inc": { "type": "string" } }, "required": ["mbid", "fmt"] },
+      "response": { "type": "object", "properties": { "id": { "type": "string" }, "name": { "type": "string" }, "type": { "type": "string" }, "description": { "type": "string" }, "disambiguation": { "type": "string" }, "aliases": { "type": "array" } } },
+      "errors": [ { "code": 404, "description": "Instrument not found." }, { "code": 403, "description": "Missing User-Agent." } ],
+      "estimated_duration_seconds": 2, "idempotent": true
+    },
+
+    {
+      "name": "lookup_label",
+      "description": "Retrieves detailed information about a specific label by MBID. Supports inc= for releases (max 25, filterable by type/status), aliases, annotation, tags, genres, ratings, and *-rels.",
+      "when_to_use": "When you have a label MBID and want details about the record label, optionally including its releases.",
+      "endpoint": { "method": "GET", "path": "/label/{mbid}" },
+      "parameters": { "type": "object", "properties": { "mbid": { "type": "string" }, "fmt": { "type": "string", "enum": ["json"] }, "inc": { "type": "string", "description": "Entity: releases. Modifiers: aliases, annotation, tags, genres, ratings. Rels: *-rels." }, "type": { "type": "string" }, "status": { "type": "string" } }, "required": ["mbid", "fmt"] },
+      "response": { "type": "object", "properties": { "id": { "type": "string" }, "name": { "type": "string" }, "sort-name": { "type": "string" }, "type": { "type": "string" }, "disambiguation": { "type": "string" }, "country": { "type": "string" }, "label-code": { "type": "integer" }, "area": { "type": "object" }, "life-span": { "type": "object" }, "releases": { "type": "array" } } },
+      "errors": [ { "code": 404, "description": "Label not found." }, { "code": 403, "description": "Missing User-Agent." }, { "code": 503, "description": "Rate limit." } ],
+      "estimated_duration_seconds": 2, "idempotent": true
+    },
+
+    {
+      "name": "lookup_place",
+      "description": "Retrieves detailed information about a specific place by MBID. Places represent venues, studios, etc. Supports inc= for aliases, annotation, tags, genres, and *-rels.",
+      "when_to_use": "When you have a place MBID and want details about a venue, studio, or location.",
+      "endpoint": { "method": "GET", "path": "/place/{mbid}" },
+      "parameters": { "type": "object", "properties": { "mbid": { "type": "string" }, "fmt": { "type": "string", "enum": ["json"] }, "inc": { "type": "string" } }, "required": ["mbid", "fmt"] },
+      "response": { "type": "object", "properties": { "id": { "type": "string" }, "name": { "type": "string" }, "type": { "type": "string" }, "address": { "type": "string" }, "disambiguation": { "type": "string" }, "coordinates": { "type": "object", "properties": { "latitude": { "type": "string" }, "longitude": { "type": "string" } } }, "area": { "type": "object" }, "life-span": { "type": "object" } } },
+      "errors": [ { "code": 404, "description": "Place not found." }, { "code": 403, "description": "Missing User-Agent." } ],
+      "estimated_duration_seconds": 2, "idempotent": true
+    },
+
+    {
+      "name": "lookup_recording",
+      "description": "Retrieves detailed information about a recording by MBID. A recording is a unique audio entity. Supports inc= for: releases, release-groups, artists, artist-credits, isrcs, annotation, tags, genres, ratings, and all *-rels including work-rels and work-level-rels.",
+      "when_to_use": "When you have a recording MBID and want details — artist credits, ISRCs, tags, releases it appears on, or related works.",
+      "endpoint": { "method": "GET", "path": "/recording/{mbid}" },
+      "parameters": { "type": "object", "properties": { "mbid": { "type": "string" }, "fmt": { "type": "string", "enum": ["json"] }, "inc": { "type": "string", "description": "Entity: releases, release-groups. Modifiers: artists, artist-credits, isrcs, annotation, tags, genres, ratings. Rels: *-rels, work-level-rels." }, "type": { "type": "string" }, "status": { "type": "string" } }, "required": ["mbid", "fmt"] },
+      "response": { "type": "object", "properties": { "id": { "type": "string" }, "title": { "type": "string" }, "length": { "type": "integer", "description": "Duration in ms." }, "disambiguation": { "type": "string" }, "video": { "type": "boolean" }, "first-release-date": { "type": "string" }, "artist-credit": { "type": "array" }, "releases": { "type": "array" }, "isrcs": { "type": "array", "items": { "type": "string" } }, "tags": { "type": "array" }, "genres": { "type": "array" }, "relations": { "type": "array" } } },
+      "errors": [ { "code": 400, "description": "Invalid MBID or inc." }, { "code": 404, "description": "Recording not found." }, { "code": 403, "description": "Missing User-Agent." }, { "code": 503, "description": "Rate limit." } ],
+      "estimated_duration_seconds": 3, "idempotent": true
+    },
+
+    {
+      "name": "lookup_release",
+      "description": "Retrieves detailed information about a release by MBID. A release is a specific edition of a release group. Supports inc= for: collections, labels, recordings (full tracklist), release-groups, artist-credits, discids, media, isrcs (requires recordings), annotation, tags, genres, and all *-rels including recording-level-rels, release-group-level-rels, work-level-rels.",
+      "when_to_use": "When you have a release MBID and want its full details — tracklist, labels, artist credits, disc IDs, or relationships.",
+      "endpoint": { "method": "GET", "path": "/release/{mbid}" },
+      "parameters": { "type": "object", "properties": { "mbid": { "type": "string" }, "fmt": { "type": "string", "enum": ["json"] }, "inc": { "type": "string", "description": "Entity: collections, labels, recordings, release-groups. Modifiers: artist-credits, discids, media, isrcs, annotation, tags, genres. Rels: *-rels, recording-level-rels, release-group-level-rels, work-level-rels." }, "type": { "type": "string" } }, "required": ["mbid", "fmt"] },
+      "response": { "type": "object", "properties": { "id": { "type": "string" }, "title": { "type": "string" }, "status": { "type": "string" }, "date": { "type": "string" }, "country": { "type": "string" }, "barcode": { "type": "string" }, "packaging": { "type": "string" }, "quality": { "type": "string" }, "disambiguation": { "type": "string" }, "release-group": { "type": "object", "properties": { "id": { "type": "string" }, "title": { "type": "string" }, "primary-type": { "type": "string" }, "secondary-types": { "type": "array" } } }, "artist-credit": { "type": "array" }, "label-info": { "type": "array" }, "media": { "type": "array", "description": "Array of mediums, each with tracks (when inc=recordings). Tracks contain recording objects with MBIDs." }, "release-events": { "type": "array" }, "cover-art-archive": { "type": "object", "properties": { "artwork": { "type": "boolean" }, "front": { "type": "boolean" }, "back": { "type": "boolean" }, "count": { "type": "integer" } } }, "text-representation": { "type": "object", "properties": { "language": { "type": "string" }, "script": { "type": "string" } } } } },
+      "errors": [ { "code": 400, "description": "Invalid MBID or inc." }, { "code": 404, "description": "Release not found." }, { "code": 403, "description": "Missing User-Agent." }, { "code": 503, "description": "Rate limit." } ],
+      "estimated_duration_seconds": 4, "idempotent": true
+    },
+
+    {
+      "name": "lookup_release_group",
+      "description": "Retrieves detailed information about a release group by MBID. A release group is an abstract 'album concept'. Supports inc= for: releases (max 25, filterable), artist-credits, annotation, tags, genres, ratings, and *-rels.",
+      "when_to_use": "When you have a release group MBID and want its details — types, related releases, or genres.",
+      "endpoint": { "method": "GET", "path": "/release-group/{mbid}" },
+      "parameters": { "type": "object", "properties": { "mbid": { "type": "string" }, "fmt": { "type": "string", "enum": ["json"] }, "inc": { "type": "string", "description": "Entity: releases. Modifiers: artist-credits, annotation, tags, genres, ratings. Rels: *-rels." }, "type": { "type": "string" }, "status": { "type": "string" } }, "required": ["mbid", "fmt"] },
+      "response": { "type": "object", "properties": { "id": { "type": "string" }, "title": { "type": "string" }, "primary-type": { "type": "string" }, "secondary-types": { "type": "array" }, "first-release-date": { "type": "string" }, "disambiguation": { "type": "string" }, "artist-credit": { "type": "array" }, "releases": { "type": "array" }, "tags": { "type": "array" }, "genres": { "type": "array" } } },
+      "errors": [ { "code": 404, "description": "Release group not found." }, { "code": 403, "description": "Missing User-Agent." }, { "code": 503, "description": "Rate limit." } ],
+      "estimated_duration_seconds": 3, "idempotent": true
+    },
+
+    {
+      "name": "lookup_series",
+      "description": "Retrieves information about a series by MBID. Supports inc= for aliases, annotation, tags, genres, and *-rels.",
+      "when_to_use": "When you have a series MBID and want details about an ordered grouping of related entities.",
+      "endpoint": { "method": "GET", "path": "/series/{mbid}" },
+      "parameters": { "type": "object", "properties": { "mbid": { "type": "string" }, "fmt": { "type": "string", "enum": ["json"] }, "inc": { "type": "string" } }, "required": ["mbid", "fmt"] },
+      "response": { "type": "object", "properties": { "id": { "type": "string" }, "name": { "type": "string" }, "type": { "type": "string" }, "disambiguation": { "type": "string" }, "relations": { "type": "array" } } },
+      "errors": [ { "code": 404, "description": "Series not found." }, { "code": 403, "description": "Missing User-Agent." } ],
+      "estimated_duration_seconds": 2, "idempotent": true
+    },
+
+    {
+      "name": "lookup_work",
+      "description": "Retrieves information about a work by MBID. A work represents a distinct composition. Supports inc= for aliases, annotation, tags, genres, ratings, and *-rels.",
+      "when_to_use": "When you have a work MBID and want details about a composition — writers, ISWCs, or relationships.",
+      "endpoint": { "method": "GET", "path": "/work/{mbid}" },
+      "parameters": { "type": "object", "properties": { "mbid": { "type": "string" }, "fmt": { "type": "string", "enum": ["json"] }, "inc": { "type": "string" } }, "required": ["mbid", "fmt"] },
+      "response": { "type": "object", "properties": { "id": { "type": "string" }, "title": { "type": "string" }, "type": { "type": "string" }, "disambiguation": { "type": "string" }, "iswcs": { "type": "array", "items": { "type": "string" } }, "language": { "type": "string" }, "attributes": { "type": "array" }, "relations": { "type": "array" } } },
+      "errors": [ { "code": 404, "description": "Work not found." }, { "code": 403, "description": "Missing User-Agent." } ],
+      "estimated_duration_seconds": 2, "idempotent": true
+    },
+
+    {
+      "name": "lookup_url",
+      "description": "Retrieves information about a URL entity by MBID. Supports *-rels to see what entities link to this URL.",
+      "when_to_use": "When you have a URL entity MBID and want to see its relationships.",
+      "endpoint": { "method": "GET", "path": "/url/{mbid}" },
+      "parameters": { "type": "object", "properties": { "mbid": { "type": "string" }, "fmt": { "type": "string", "enum": ["json"] }, "inc": { "type": "string", "description": "Only *-rels." } }, "required": ["mbid", "fmt"] },
+      "response": { "type": "object", "properties": { "id": { "type": "string" }, "resource": { "type": "string", "description": "The actual URL." }, "relations": { "type": "array" } } },
+      "errors": [ { "code": 404, "description": "URL entity not found." }, { "code": 403, "description": "Missing User-Agent." } ],
+      "estimated_duration_seconds": 2, "idempotent": true
+    },
+
+    {
+      "name": "lookup_url_by_resource",
+      "description": "Looks up URL entities by actual URL string (not MBID). Accepts one or more 'resource' parameters (up to 100). URLs not found are skipped. The resource value must be URL-encoded.",
+      "when_to_use": "When you have an actual URL (e.g., artist website, Spotify link) and want to find the corresponding MusicBrainz URL entity.",
+      "endpoint": { "method": "GET", "path": "/url" },
+      "parameters": { "type": "object", "properties": { "resource": { "type": "string", "description": "The URL to look up (URL-encoded)." }, "fmt": { "type": "string", "enum": ["json"] }, "inc": { "type": "string" } }, "required": ["resource", "fmt"] },
+      "response": { "type": "object", "properties": { "id": { "type": "string" }, "resource": { "type": "string" }, "relations": { "type": "array" } } },
+      "errors": [ { "code": 404, "description": "URL not found in MusicBrainz." }, { "code": 403, "description": "Missing User-Agent." } ],
+      "estimated_duration_seconds": 2, "idempotent": true
+    },
+
+    {
+      "name": "list_all_genres",
+      "description": "Returns all MusicBrainz genres in alphabetical order, paginated.",
+      "when_to_use": "When you want the complete list of valid MusicBrainz genres.",
+      "endpoint": { "method": "GET", "path": "/genre/all" },
+      "parameters": { "type": "object", "properties": { "fmt": { "type": "string", "enum": ["json"] }, "limit": { "type": "integer", "default": 25 }, "offset": { "type": "integer", "default": 0 } }, "required": ["fmt"] },
+      "response": { "type": "object", "properties": { "genre-count": { "type": "integer" }, "genre-offset": { "type": "integer" }, "genres": { "type": "array", "items": { "type": "object", "properties": { "id": { "type": "string" }, "name": { "type": "string" }, "disambiguation": { "type": "string" } } } } } },
+      "errors": [ { "code": 403, "description": "Missing User-Agent." } ],
+      "estimated_duration_seconds": 2, "idempotent": true
+    },
+
+    {
+      "name": "lookup_discid",
+      "description": "Looks up releases by Disc ID. Supports 'toc' for fuzzy matching. Use '-' as discid for TOC-only lookup. Pass cdstubs=no to skip CD stubs. Inc params match release lookup. Set media-format=all to include non-CD media in TOC fuzzy lookup.",
+      "when_to_use": "When you have a CD disc ID or TOC and want to find matching releases.",
+      "endpoint": { "method": "GET", "path": "/discid/{discid}" },
+      "parameters": { "type": "object", "properties": { "discid": { "type": "string", "description": "Disc ID string or '-' for TOC-only." }, "fmt": { "type": "string", "enum": ["json"] }, "toc": { "type": "string", "description": "TOC: 'first_track+total_tracks+leadout+track1_offset+track2_offset+...'." }, "inc": { "type": "string" }, "cdstubs": { "type": "string", "enum": ["yes", "no"], "default": "yes" }, "media-format": { "type": "string", "enum": ["all"] } }, "required": ["discid", "fmt"] },
+      "response": { "type": "object", "properties": { "id": { "type": "string" }, "sectors": { "type": "integer" }, "offsets": { "type": "array" }, "offset-count": { "type": "integer" }, "releases": { "type": "array" } } },
+      "errors": [ { "code": 400, "description": "Invalid disc ID or TOC." }, { "code": 404, "description": "No matches found." }, { "code": 403, "description": "Missing User-Agent." } ],
+      "estimated_duration_seconds": 3, "idempotent": true
+    },
+
+    {
+      "name": "lookup_isrc",
+      "description": "Looks up recordings by ISRC code. Returns all recordings linked to the ISRC. Inc params match recording lookup.",
+      "when_to_use": "When you have an ISRC and want to find which recordings it identifies.",
+      "endpoint": { "method": "GET", "path": "/isrc/{isrc}" },
+      "parameters": { "type": "object", "properties": { "isrc": { "type": "string", "description": "ISRC code (12 chars, e.g., 'GBAHT1600302')." }, "fmt": { "type": "string", "enum": ["json"] }, "inc": { "type": "string" } }, "required": ["isrc", "fmt"] },
+      "response": { "type": "object", "properties": { "isrc": { "type": "string" }, "recordings": { "type": "array", "items": { "type": "object", "properties": { "id": { "type": "string" }, "title": { "type": "string" }, "length": { "type": "integer" }, "artist-credit": { "type": "array" } } } } } },
+      "errors": [ { "code": 400, "description": "Invalid ISRC." }, { "code": 404, "description": "No recordings for this ISRC." }, { "code": 403, "description": "Missing User-Agent." } ],
+      "estimated_duration_seconds": 2, "idempotent": true
+    },
+
+    {
+      "name": "lookup_iswc",
+      "description": "Looks up works by ISWC code. Returns all works linked to the ISWC. Inc params match work lookup.",
+      "when_to_use": "When you have an ISWC and want to find which works it identifies.",
+      "endpoint": { "method": "GET", "path": "/iswc/{iswc}" },
+      "parameters": { "type": "object", "properties": { "iswc": { "type": "string", "description": "ISWC code (e.g., 'T-070.116.442-2')." }, "fmt": { "type": "string", "enum": ["json"] }, "inc": { "type": "string" } }, "required": ["iswc", "fmt"] },
+      "response": { "type": "object", "properties": { "work-count": { "type": "integer" }, "works": { "type": "array", "items": { "type": "object", "properties": { "id": { "type": "string" }, "title": { "type": "string" }, "iswcs": { "type": "array" } } } } } },
+      "errors": [ { "code": 400, "description": "Invalid ISWC." }, { "code": 404, "description": "No works for this ISWC." }, { "code": 403, "description": "Missing User-Agent." } ],
+      "estimated_duration_seconds": 2, "idempotent": true
+    },
+
+
+    {
+      "name": "search_annotations",
+      "description": "Searches the annotation index. Fields: entity (MBID), id, name, text, type. Default: name, text, type.",
+      "when_to_use": "When looking for free-text annotations attached to MusicBrainz entities.",
+      "endpoint": { "method": "GET", "path": "/annotation" },
+      "parameters": { "type": "object", "properties": { "query": { "type": "string" }, "fmt": { "type": "string", "enum": ["json"] }, "limit": { "type": "integer", "default": 25 }, "offset": { "type": "integer", "default": 0 } }, "required": ["query", "fmt"] },
+      "response": { "type": "object", "properties": { "count": { "type": "integer" }, "annotations": { "type": "array" } } },
+      "errors": [ { "code": 400, "description": "Invalid query." }, { "code": 403, "description": "Missing User-Agent." } ],
+      "estimated_duration_seconds": 3, "idempotent": true
+    },
+
+    {
+      "name": "search_areas",
+      "description": "Searches the area index. Fields: aid, alias, area, areaaccent, begin, comment, end, ended, iso, iso1, iso2, iso3, sortname, tag, type. Default: area.",
+      "when_to_use": "When finding a geographic area by name, ISO code, or type.",
+      "endpoint": { "method": "GET", "path": "/area" },
+      "parameters": { "type": "object", "properties": { "query": { "type": "string" }, "fmt": { "type": "string", "enum": ["json"] }, "limit": { "type": "integer", "default": 25 }, "offset": { "type": "integer", "default": 0 } }, "required": ["query", "fmt"] },
+      "response": { "type": "object", "properties": { "count": { "type": "integer" }, "areas": { "type": "array" } } },
+      "errors": [ { "code": 400, "description": "Invalid query." }, { "code": 403, "description": "Missing User-Agent." } ],
+      "estimated_duration_seconds": 3, "idempotent": true
+    },
+
+    {
+      "name": "search_artists",
+      "description": "Searches the artist index. Fields: alias, primary_alias, area, arid, artist, artistaccent, begin, beginarea, comment, country, end, endarea, ended, gender, ipi, isni, sortname, tag, type. Default: alias, artist, sortname.",
+      "when_to_use": "When finding an artist by name, country, type, tag, or other criteria. Use to resolve names to MBIDs.",
+      "endpoint": { "method": "GET", "path": "/artist" },
+      "parameters": { "type": "object", "properties": { "query": { "type": "string", "description": "Lucene query. Ex: 'radiohead', 'artist:bjork AND type:person AND country:IS'." }, "fmt": { "type": "string", "enum": ["json"] }, "limit": { "type": "integer", "default": 25 }, "offset": { "type": "integer", "default": 0 } }, "required": ["query", "fmt"] },
+      "response": { "type": "object", "properties": { "count": { "type": "integer" }, "artists": { "type": "array", "items": { "type": "object", "properties": { "id": { "type": "string" }, "type": { "type": "string" }, "score": { "type": "string" }, "name": { "type": "string" }, "sort-name": { "type": "string" }, "country": { "type": "string" }, "area": { "type": "object" }, "disambiguation": { "type": "string" }, "life-span": { "type": "object" }, "aliases": { "type": "array" }, "tags": { "type": "array" }, "gender": { "type": "string" } } } } } },
+      "errors": [ { "code": 400, "description": "Invalid query syntax." }, { "code": 403, "description": "Missing User-Agent." }, { "code": 503, "description": "Rate limit." } ],
+      "estimated_duration_seconds": 3, "idempotent": true
+    },
+
+    {
+      "name": "search_cdstubs",
+      "description": "Searches the CD stub index. Fields: added, artist, barcode, comment, discid, title, tracks. Default: artist, title.",
+      "when_to_use": "When looking for CD stubs by artist, title, barcode, or disc ID.",
+      "endpoint": { "method": "GET", "path": "/cdstub" },
+      "parameters": { "type": "object", "properties": { "query": { "type": "string" }, "fmt": { "type": "string", "enum": ["json"] }, "limit": { "type": "integer", "default": 25 }, "offset": { "type": "integer", "default": 0 } }, "required": ["query", "fmt"] },
+      "response": { "type": "object", "properties": { "count": { "type": "integer" }, "cdstubs": { "type": "array" } } },
+      "errors": [ { "code": 400, "description": "Invalid query." }, { "code": 403, "description": "Missing User-Agent." } ],
+      "estimated_duration_seconds": 3, "idempotent": true
+    },
+
+    {
+      "name": "search_events",
+      "description": "Searches the event index. Fields: alias, aid, area, arid, artist, begin, comment, end, ended, eid, event, eventaccent, pid, place, tag, type. Default: alias, artist, event.",
+      "when_to_use": "When finding concerts, festivals, or events by name, artist, place, or date.",
+      "endpoint": { "method": "GET", "path": "/event" },
+      "parameters": { "type": "object", "properties": { "query": { "type": "string" }, "fmt": { "type": "string", "enum": ["json"] }, "limit": { "type": "integer", "default": 25 }, "offset": { "type": "integer", "default": 0 } }, "required": ["query", "fmt"] },
+      "response": { "type": "object", "properties": { "count": { "type": "integer" }, "events": { "type": "array" } } },
+      "errors": [ { "code": 400, "description": "Invalid query." }, { "code": 403, "description": "Missing User-Agent." } ],
+      "estimated_duration_seconds": 3, "idempotent": true
+    },
+
+    {
+      "name": "search_instruments",
+      "description": "Searches the instrument index. Fields: alias, comment, description, iid, instrument, instrumentaccent, tag, type. Default: alias, description, instrument.",
+      "when_to_use": "When finding a musical instrument by name, type, or description.",
+      "endpoint": { "method": "GET", "path": "/instrument" },
+      "parameters": { "type": "object", "properties": { "query": { "type": "string" }, "fmt": { "type": "string", "enum": ["json"] }, "limit": { "type": "integer", "default": 25 }, "offset": { "type": "integer", "default": 0 } }, "required": ["query", "fmt"] },
+      "response": { "type": "object", "properties": { "count": { "type": "integer" }, "instruments": { "type": "array" } } },
+      "errors": [ { "code": 400, "description": "Invalid query." }, { "code": 403, "description": "Missing User-Agent." } ],
+      "estimated_duration_seconds": 3, "idempotent": true
+    },
+
+    {
+      "name": "search_labels",
+      "description": "Searches the label index. Fields: alias, area, begin, code, comment, country, end, ended, ipi, isni, label, labelaccent, laid, release_count, sortname, tag, type. Default: alias, label.",
+      "when_to_use": "When finding a record label by name, country, label code, or type.",
+      "endpoint": { "method": "GET", "path": "/label" },
+      "parameters": { "type": "object", "properties": { "query": { "type": "string" }, "fmt": { "type": "string", "enum": ["json"] }, "limit": { "type": "integer", "default": 25 }, "offset": { "type": "integer", "default": 0 } }, "required": ["query", "fmt"] },
+      "response": { "type": "object", "properties": { "count": { "type": "integer" }, "labels": { "type": "array" } } },
+      "errors": [ { "code": 400, "description": "Invalid query." }, { "code": 403, "description": "Missing User-Agent." } ],
+      "estimated_duration_seconds": 3, "idempotent": true
+    },
+
+    {
+      "name": "search_places",
+      "description": "Searches the place index. Fields: address, alias, area, begin, comment, end, ended, lat, long, place, placeaccent, pid, type. Default: address, alias, area, place.",
+      "when_to_use": "When finding a venue, studio, or place by name, address, or area.",
+      "endpoint": { "method": "GET", "path": "/place" },
+      "parameters": { "type": "object", "properties": { "query": { "type": "string" }, "fmt": { "type": "string", "enum": ["json"] }, "limit": { "type": "integer", "default": 25 }, "offset": { "type": "integer", "default": 0 } }, "required": ["query", "fmt"] },
+      "response": { "type": "object", "properties": { "count": { "type": "integer" }, "places": { "type": "array" } } },
+      "errors": [ { "code": 400, "description": "Invalid query." }, { "code": 403, "description": "Missing User-Agent." } ],
+      "estimated_duration_seconds": 3, "idempotent": true
+    },
+
+    {
+      "name": "search_recordings",
+      "description": "Searches the recording index. Fields: alias, arid, artist, artistname, comment, country, creditname, date, dur, firstreleasedate, format, isrc, number, position, primarytype, qdur, recording, recordingaccent, reid, release, rgid, rid, secondarytype, status, tag, tid, tnum, tracks, tracksrelease, type, video. Default: recording.",
+      "when_to_use": "When finding a recording by name, artist, ISRC, duration, or other criteria.",
+      "endpoint": { "method": "GET", "path": "/recording" },
+      "parameters": { "type": "object", "properties": { "query": { "type": "string", "description": "Ex: 'recording:creep AND artist:radiohead', 'isrc:GBAHT1600302'." }, "fmt": { "type": "string", "enum": ["json"] }, "limit": { "type": "integer", "default": 25 }, "offset": { "type": "integer", "default": 0 } }, "required": ["query", "fmt"] },
+      "response": { "type": "object", "properties": { "count": { "type": "integer" }, "recordings": { "type": "array", "items": { "type": "object", "properties": { "id": { "type": "string" }, "score": { "type": "string" }, "title": { "type": "string" }, "length": { "type": "integer" }, "video": { "type": "boolean" }, "artist-credit": { "type": "array" }, "first-release-date": { "type": "string" }, "releases": { "type": "array" }, "isrcs": { "type": "array" }, "tags": { "type": "array" } } } } } },
+      "errors": [ { "code": 400, "description": "Invalid query." }, { "code": 403, "description": "Missing User-Agent." }, { "code": 503, "description": "Rate limit." } ],
+      "estimated_duration_seconds": 4, "idempotent": true
+    },
+
+    {
+      "name": "search_releases",
+      "description": "Searches the release index. Fields: arid, artist, artistname, asin, barcode, catno, comment, country, creditname, date, discids, discidsmedium, format, laid, label, lang, mediums, packaging, primarytype, quality, reid, release, releaseaccent, rgid, script, secondarytype, status, tag, tracks, tracksmedium, type. Default: release.",
+      "when_to_use": "When finding a release by title, barcode, catalog number, label, or artist.",
+      "endpoint": { "method": "GET", "path": "/release" },
+      "parameters": { "type": "object", "properties": { "query": { "type": "string" }, "fmt": { "type": "string", "enum": ["json"] }, "limit": { "type": "integer", "default": 25 }, "offset": { "type": "integer", "default": 0 } }, "required": ["query", "fmt"] },
+      "response": { "type": "object", "properties": { "count": { "type": "integer" }, "releases": { "type": "array" } } },
+      "errors": [ { "code": 400, "description": "Invalid query." }, { "code": 403, "description": "Missing User-Agent." }, { "code": 503, "description": "Rate limit." } ],
+      "estimated_duration_seconds": 4, "idempotent": true
+    },
+
+    {
+      "name": "search_release_groups",
+      "description": "Searches the release-group index. Fields: alias, arid, artist, artistname, comment, creditname, firstreleasedate, primarytype, reid, release, releasegroup, releasegroupaccent, releases, rgid, secondarytype, status, tag, type. Default: releasegroup.",
+      "when_to_use": "When finding an album/single/EP concept by title, artist, or type.",
+      "endpoint": { "method": "GET", "path": "/release-group" },
+      "parameters": { "type": "object", "properties": { "query": { "type": "string" }, "fmt": { "type": "string", "enum": ["json"] }, "limit": { "type": "integer", "default": 25 }, "offset": { "type": "integer", "default": 0 } }, "required": ["query", "fmt"] },
+      "response": { "type": "object", "properties": { "count": { "type": "integer" }, "release-groups": { "type": "array" } } },
+      "errors": [ { "code": 400, "description": "Invalid query." }, { "code": 403, "description": "Missing User-Agent." } ],
+      "estimated_duration_seconds": 3, "idempotent": true
+    },
+
+    {
+      "name": "search_series",
+      "description": "Searches the series index. Fields: alias, comment, orderingtype, series, seriesaccent, sid, tag, type. Default: alias, series.",
+      "when_to_use": "When finding a series of related works, events, releases, or recordings.",
+      "endpoint": { "method": "GET", "path": "/series" },
+      "parameters": { "type": "object", "properties": { "query": { "type": "string" }, "fmt": { "type": "string", "enum": ["json"] }, "limit": { "type": "integer", "default": 25 }, "offset": { "type": "integer", "default": 0 } }, "required": ["query", "fmt"] },
+      "response": { "type": "object", "properties": { "count": { "type": "integer" }, "series": { "type": "array" } } },
+      "errors": [ { "code": 400, "description": "Invalid query." }, { "code": 403, "description": "Missing User-Agent." } ],
+      "estimated_duration_seconds": 3, "idempotent": true
+    },
+
+    {
+      "name": "search_tags",
+      "description": "Searches the tag index. Fields: tag. Default: tag.",
+      "when_to_use": "When finding tags used in MusicBrainz by keyword.",
+      "endpoint": { "method": "GET", "path": "/tag" },
+      "parameters": { "type": "object", "properties": { "query": { "type": "string" }, "fmt": { "type": "string", "enum": ["json"] }, "limit": { "type": "integer", "default": 25 }, "offset": { "type": "integer", "default": 0 } }, "required": ["query", "fmt"] },
+      "response": { "type": "object", "properties": { "count": { "type": "integer" }, "tags": { "type": "array" } } },
+      "errors": [ { "code": 400, "description": "Invalid query." }, { "code": 403, "description": "Missing User-Agent." } ],
+      "estimated_duration_seconds": 2, "idempotent": true
+    },
+
+    {
+      "name": "search_urls",
+      "description": "Searches the URL index. Fields: relationtype, targetid, targettype, uid, url. Default: url.",
+      "when_to_use": "When finding URL entities by URL string or relationship type.",
+      "endpoint": { "method": "GET", "path": "/url" },
+      "parameters": { "type": "object", "properties": { "query": { "type": "string" }, "fmt": { "type": "string", "enum": ["json"] }, "limit": { "type": "integer", "default": 25 }, "offset": { "type": "integer", "default": 0 } }, "required": ["query", "fmt"] },
+      "response": { "type": "object", "properties": { "count": { "type": "integer" }, "urls": { "type": "array" } } },
+      "errors": [ { "code": 400, "description": "Invalid query." }, { "code": 403, "description": "Missing User-Agent." } ],
+      "estimated_duration_seconds": 3, "idempotent": true
+    },
+
+    {
+      "name": "search_works",
+      "description": "Searches the work index. Fields: alias, arid, artist, comment, iswc, lang, tag, type, wid, work, workaccent. Default: alias, artist, work.",
+      "when_to_use": "When finding a composition by title, composer, ISWC, or language.",
+      "endpoint": { "method": "GET", "path": "/work" },
+      "parameters": { "type": "object", "properties": { "query": { "type": "string" }, "fmt": { "type": "string", "enum": ["json"] }, "limit": { "type": "integer", "default": 25 }, "offset": { "type": "integer", "default": 0 } }, "required": ["query", "fmt"] },
+      "response": { "type": "object", "properties": { "count": { "type": "integer" }, "works": { "type": "array" } } },
+      "errors": [ { "code": 400, "description": "Invalid query." }, { "code": 403, "description": "Missing User-Agent." } ],
+      "estimated_duration_seconds": 3, "idempotent": true
+    },
+
+
+    {
+      "name": "browse_areas",
+      "description": "Browses areas linked to a collection. Pagination via limit/offset. Inc: aliases, annotation, tags, genres, and *-rels.",
+      "when_to_use": "When listing all areas in a collection.",
+      "endpoint": { "method": "GET", "path": "/area" },
+      "parameters": { "type": "object", "properties": { "collection": { "type": "string", "description": "Collection MBID." }, "fmt": { "type": "string", "enum": ["json"] }, "limit": { "type": "integer", "default": 25 }, "offset": { "type": "integer", "default": 0 }, "inc": { "type": "string" } }, "required": ["collection", "fmt"] },
+      "response": { "type": "object", "properties": { "area-count": { "type": "integer" }, "area-offset": { "type": "integer" }, "areas": { "type": "array" } } },
+      "errors": [ { "code": 400, "description": "Invalid MBID." }, { "code": 403, "description": "Missing User-Agent." } ],
+      "estimated_duration_seconds": 3, "idempotent": true
+    },
+
+    {
+      "name": "browse_artists",
+      "description": "Browses artists linked to another entity. Linked: area, collection, recording, release, release-group, work. Provide exactly ONE. Inc: aliases, annotation, tags, genres, ratings, and *-rels.",
+      "when_to_use": "When listing all artists linked to a specific area, recording, release, release-group, work, or collection.",
+      "endpoint": { "method": "GET", "path": "/artist" },
+      "parameters": { "type": "object", "properties": { "area": { "type": "string" }, "collection": { "type": "string" }, "recording": { "type": "string" }, "release": { "type": "string" }, "release-group": { "type": "string" }, "work": { "type": "string" }, "fmt": { "type": "string", "enum": ["json"] }, "limit": { "type": "integer", "default": 25 }, "offset": { "type": "integer", "default": 0 }, "inc": { "type": "string" } }, "required": ["fmt"] },
+      "response": { "type": "object", "properties": { "artist-count": { "type": "integer" }, "artist-offset": { "type": "integer" }, "artists": { "type": "array" } } },
+      "errors": [ { "code": 400, "description": "Exactly one linked entity param required." }, { "code": 403, "description": "Missing User-Agent." } ],
+      "estimated_duration_seconds": 3, "idempotent": true
+    },
+
+    {
+      "name": "browse_collections",
+      "description": "Browses collections linked to another entity. Linked: area, artist, editor (username), event, label, place, recording, release, release-group, work. Provide exactly ONE. Add inc=user-collections (auth required) for private collections.",
+      "when_to_use": "When listing collections containing a specific entity, or a user's collections.",
+      "endpoint": { "method": "GET", "path": "/collection" },
+      "parameters": { "type": "object", "properties": { "area": { "type": "string" }, "artist": { "type": "string" }, "editor": { "type": "string", "description": "Editor username." }, "event": { "type": "string" }, "label": { "type": "string" }, "place": { "type": "string" }, "recording": { "type": "string" }, "release": { "type": "string" }, "release-group": { "type": "string" }, "work": { "type": "string" }, "fmt": { "type": "string", "enum": ["json"] }, "limit": { "type": "integer", "default": 25 }, "offset": { "type": "integer", "default": 0 }, "inc": { "type": "string" } }, "required": ["fmt"] },
+      "response": { "type": "object", "properties": { "collection-count": { "type": "integer" }, "collection-offset": { "type": "integer" }, "collections": { "type": "array" } } },
+      "errors": [ { "code": 400, "description": "Missing linked entity." }, { "code": 403, "description": "Missing User-Agent." } ],
+      "estimated_duration_seconds": 3, "idempotent": true
+    },
+
+    {
+      "name": "browse_events",
+      "description": "Browses events linked to another entity. Linked: area, artist, collection, place. Provide exactly ONE. Inc: aliases, annotation, tags, genres, ratings, and *-rels.",
+      "when_to_use": "When listing events in an area, by an artist, at a place, or in a collection.",
+      "endpoint": { "method": "GET", "path": "/event" },
+      "parameters": { "type": "object", "properties": { "area": { "type": "string" }, "artist": { "type": "string" }, "collection": { "type": "string" }, "place": { "type": "string" }, "fmt": { "type": "string", "enum": ["json"] }, "limit": { "type": "integer", "default": 25 }, "offset": { "type": "integer", "default": 0 }, "inc": { "type": "string" } }, "required": ["fmt"] },
+      "response": { "type": "object", "properties": { "event-count": { "type": "integer" }, "event-offset": { "type": "integer" }, "events": { "type": "array" } } },
+      "errors": [ { "code": 400, "description": "Missing linked entity." }, { "code": 403, "description": "Missing User-Agent." } ],
+      "estimated_duration_seconds": 3, "idempotent": true
+    },
+
+    {
+      "name": "browse_genres",
+      "description": "Browses genres in a collection.",
+      "when_to_use": "When listing all genres in a collection.",
+      "endpoint": { "method": "GET", "path": "/genre" },
+      "parameters": { "type": "object", "properties": { "collection": { "type": "string" }, "fmt": { "type": "string", "enum": ["json"] }, "limit": { "type": "integer", "default": 25 }, "offset": { "type": "integer", "default": 0 } }, "required": ["collection", "fmt"] },
+      "response": { "type": "object", "properties": { "genre-count": { "type": "integer" }, "genres": { "type": "array" } } },
+      "errors": [ { "code": 400, "description": "Invalid collection." }, { "code": 403, "description": "Missing User-Agent." } ],
+      "estimated_duration_seconds": 2, "idempotent": true
+    },
+
+    {
+      "name": "browse_instruments",
+      "description": "Browses instruments in a collection. Inc: aliases, annotation, tags, genres.",
+      "when_to_use": "When listing all instruments in a collection.",
+      "endpoint": { "method": "GET", "path": "/instrument" },
+      "parameters": { "type": "object", "properties": { "collection": { "type": "string" }, "fmt": { "type": "string", "enum": ["json"] }, "limit": { "type": "integer", "default": 25 }, "offset": { "type": "integer", "default": 0 }, "inc": { "type": "string" } }, "required": ["collection", "fmt"] },
+      "response": { "type": "object", "properties": { "instrument-count": { "type": "integer" }, "instruments": { "type": "array" } } },
+      "errors": [ { "code": 400, "description": "Invalid collection." }, { "code": 403, "description": "Missing User-Agent." } ],
+      "estimated_duration_seconds": 3, "idempotent": true
+    },
+
+    {
+      "name": "browse_labels",
+      "description": "Browses labels linked to another entity. Linked: area, collection, release. Provide exactly ONE. Inc: aliases, annotation, tags, genres, ratings, and *-rels.",
+      "when_to_use": "When listing labels from a specific area, in a collection, or on a release.",
+      "endpoint": { "method": "GET", "path": "/label" },
+      "parameters": { "type": "object", "properties": { "area": { "type": "string" }, "collection": { "type": "string" }, "release": { "type": "string" }, "fmt": { "type": "string", "enum": ["json"] }, "limit": { "type": "integer", "default": 25 }, "offset": { "type": "integer", "default": 0 }, "inc": { "type": "string" } }, "required": ["fmt"] },
+      "response": { "type": "object", "properties": { "label-count": { "type": "integer" }, "label-offset": { "type": "integer" }, "labels": { "type": "array" } } },
+      "errors": [ { "code": 400, "description": "Missing linked entity." }, { "code": 403, "description": "Missing User-Agent." } ],
+      "estimated_duration_seconds": 3, "idempotent": true
+    },
+
+    {
+      "name": "browse_places",
+      "description": "Browses places linked to an area or collection. Provide exactly ONE. Inc: aliases, annotation, tags, genres, and *-rels.",
+      "when_to_use": "When listing venues/studios in an area or collection.",
+      "endpoint": { "method": "GET", "path": "/place" },
+      "parameters": { "type": "object", "properties": { "area": { "type": "string" }, "collection": { "type": "string" }, "fmt": { "type": "string", "enum": ["json"] }, "limit": { "type": "integer", "default": 25 }, "offset": { "type": "integer", "default": 0 }, "inc": { "type": "string" } }, "required": ["fmt"] },
+      "response": { "type": "object", "properties": { "place-count": { "type": "integer" }, "places": { "type": "array" } } },
+      "errors": [ { "code": 400, "description": "Missing linked entity." }, { "code": 403, "description": "Missing User-Agent." } ],
+      "estimated_duration_seconds": 3, "idempotent": true
+    },
+
+    {
+      "name": "browse_recordings",
+      "description": "Browses recordings linked to another entity. Linked: artist, collection, release, work. Provide exactly ONE. Inc: artist-credits, isrcs, annotation, tags, genres, ratings, and *-rels.",
+      "when_to_use": "When you want the full paginated list of recordings by an artist, on a release, of a work, or in a collection.",
+      "endpoint": { "method": "GET", "path": "/recording" },
+      "parameters": { "type": "object", "properties": { "artist": { "type": "string" }, "collection": { "type": "string" }, "release": { "type": "string" }, "work": { "type": "string" }, "fmt": { "type": "string", "enum": ["json"] }, "limit": { "type": "integer", "default": 25 }, "offset": { "type": "integer", "default": 0 }, "inc": { "type": "string", "description": "Valid: artist-credits, isrcs, annotation, tags, genres, ratings, and *-rels." } }, "required": ["fmt"] },
+      "response": { "type": "object", "properties": { "recording-count": { "type": "integer" }, "recording-offset": { "type": "integer" }, "recordings": { "type": "array" } } },
+      "errors": [ { "code": 400, "description": "Missing linked entity." }, { "code": 403, "description": "Missing User-Agent." }, { "code": 503, "description": "Rate limit." } ],
+      "estimated_duration_seconds": 4, "idempotent": true
+    },
+
+    {
+      "name": "browse_releases",
+      "description": "Browses releases linked to another entity. Linked: area, artist, collection, label, track, track_artist, recording, release-group. Provide exactly ONE. Supports type= and status= filters. Inc: artist-credits, labels, recordings, release-groups, media, discids, isrcs (with recordings), annotation, tags, genres, and *-rels. track_artist returns releases where artist appears on track credits only (various-artist appearances). Paging caveat: server limits to 500 total tracks per page.",
+      "when_to_use": "When you want the full paginated releases by an artist, on a label, in a release-group, etc. Use when lookup inc=releases (max 25) is insufficient.",
+      "endpoint": { "method": "GET", "path": "/release" },
+      "parameters": { "type": "object", "properties": { "area": { "type": "string" }, "artist": { "type": "string" }, "collection": { "type": "string" }, "label": { "type": "string" }, "track": { "type": "string" }, "track_artist": { "type": "string", "description": "Artist MBID — various-artist appearances only." }, "recording": { "type": "string" }, "release-group": { "type": "string" }, "fmt": { "type": "string", "enum": ["json"] }, "limit": { "type": "integer", "default": 25 }, "offset": { "type": "integer", "default": 0 }, "inc": { "type": "string" }, "type": { "type": "string", "description": "Filter by type. Combine with '|': 'album|ep'." }, "status": { "type": "string", "description": "Filter: official, promotion, bootleg, pseudo-release, withdrawn, cancelled." } }, "required": ["fmt"] },
+      "response": { "type": "object", "properties": { "release-count": { "type": "integer" }, "release-offset": { "type": "integer" }, "releases": { "type": "array" } } },
+      "errors": [ { "code": 400, "description": "Missing or invalid linked entity." }, { "code": 403, "description": "Missing User-Agent." }, { "code": 503, "description": "Rate limit." } ],
+      "estimated_duration_seconds": 5, "idempotent": true
+    },
+
+    {
+      "name": "browse_release_groups",
+      "description": "Browses release groups linked to another entity. Linked: artist, collection, release. Provide exactly ONE. Supports type= filter. Inc: artist-credits, annotation, tags, genres, ratings, and *-rels. When browsing by artist, supports release-group-status filter (website-default|all).",
+      "when_to_use": "When you want the full paginated discography (release groups) for an artist, or all release groups in a collection.",
+      "endpoint": { "method": "GET", "path": "/release-group" },
+      "parameters": { "type": "object", "properties": { "artist": { "type": "string" }, "collection": { "type": "string" }, "release": { "type": "string" }, "fmt": { "type": "string", "enum": ["json"] }, "limit": { "type": "integer", "default": 25 }, "offset": { "type": "integer", "default": 0 }, "inc": { "type": "string" }, "type": { "type": "string" }, "release-group-status": { "type": "string", "enum": ["website-default", "all"] } }, "required": ["fmt"] },
+      "response": { "type": "object", "properties": { "release-group-count": { "type": "integer" }, "release-group-offset": { "type": "integer" }, "release-groups": { "type": "array" } } },
+      "errors": [ { "code": 400, "description": "Missing linked entity." }, { "code": 403, "description": "Missing User-Agent." }, { "code": 503, "description": "Rate limit." } ],
+      "estimated_duration_seconds": 4, "idempotent": true
+    },
+
+    {
+      "name": "browse_series",
+      "description": "Browses series in a collection. Inc: aliases, annotation, tags, genres, and *-rels.",
+      "when_to_use": "When listing all series in a collection.",
+      "endpoint": { "method": "GET", "path": "/series" },
+      "parameters": { "type": "object", "properties": { "collection": { "type": "string" }, "fmt": { "type": "string", "enum": ["json"] }, "limit": { "type": "integer", "default": 25 }, "offset": { "type": "integer", "default": 0 }, "inc": { "type": "string" } }, "required": ["collection", "fmt"] },
+      "response": { "type": "object", "properties": { "series-count": { "type": "integer" }, "series": { "type": "array" } } },
+      "errors": [ { "code": 400, "description": "Invalid collection." }, { "code": 403, "description": "Missing User-Agent." } ],
+      "estimated_duration_seconds": 3, "idempotent": true
+    },
+
+    {
+      "name": "browse_works",
+      "description": "Browses works linked to an artist or collection. Provide exactly ONE. Inc: aliases, annotation, tags, genres, ratings, and *-rels.",
+      "when_to_use": "When listing all works (compositions) by an artist or in a collection.",
+      "endpoint": { "method": "GET", "path": "/work" },
+      "parameters": { "type": "object", "properties": { "artist": { "type": "string" }, "collection": { "type": "string" }, "fmt": { "type": "string", "enum": ["json"] }, "limit": { "type": "integer", "default": 25 }, "offset": { "type": "integer", "default": 0 }, "inc": { "type": "string" } }, "required": ["fmt"] },
+      "response": { "type": "object", "properties": { "work-count": { "type": "integer" }, "works": { "type": "array" } } },
+      "errors": [ { "code": 400, "description": "Missing linked entity." }, { "code": 403, "description": "Missing User-Agent." } ],
+      "estimated_duration_seconds": 4, "idempotent": true
+    }
+  ],
+
+  "examples": [
+    {
+      "description": "Full artist discography workflow: search → release groups → releases → tracklist → recording detail",
+      "steps": [
+        { "tool": "search_artists", "input": { "query": "radiohead", "fmt": "json", "limit": 5 }, "note": "Search for the artist to resolve name to MBID." },
+        { "tool": "browse_release_groups", "input": { "artist": "${step_1.artists[0].id}", "fmt": "json", "type": "album", "release-group-status": "website-default", "limit": 100 }, "note": "Browse full album discography as release groups." },
+        { "tool": "browse_releases", "input": { "release-group": "${step_2.release-groups[0].id}", "fmt": "json", "status": "official" }, "note": "Browse all official editions of the first album." },
+        { "tool": "lookup_release", "input": { "mbid": "${step_3.releases[0].id}", "fmt": "json", "inc": "recordings+artist-credits+labels" }, "note": "Get full tracklist with recording MBIDs." },
+        { "tool": "lookup_recording", "input": { "mbid": "${step_4.media[0].tracks[0].recording.id}", "fmt": "json", "inc": "artists+releases+isrcs+tags+work-rels" }, "note": "Look up a track's recording for ISRCs, tags, and linked works." }
+      ]
+    },
+    {
+      "description": "Identify a recording by ISRC and find which releases contain it",
+      "steps": [
+        { "tool": "lookup_isrc", "input": { "isrc": "GBAHT1600302", "fmt": "json", "inc": "artists" }, "note": "Find recordings by ISRC." },
+        { "tool": "lookup_recording", "input": { "mbid": "${step_1.recordings[0].id}", "fmt": "json", "inc": "releases+artists+tags" }, "note": "Full details including all releases." }
+      ]
+    },
+    {
+      "description": "Find all live bootleg releases by an artist",
+      "steps": [
+        { "tool": "search_artists", "input": { "query": "artist:metallica AND type:group", "fmt": "json", "limit": 1 }, "note": "Find Metallica." },
+        { "tool": "browse_releases", "input": { "artist": "${step_1.artists[0].id}", "fmt": "json", "status": "bootleg", "type": "live", "limit": 100 }, "note": "Browse live bootleg releases." }
+      ]
+    },
+    {
+      "description": "Find a label and browse its catalog",
+      "steps": [
+        { "tool": "search_labels", "input": { "query": "warp records", "fmt": "json" }, "note": "Search for the label." },
+        { "tool": "browse_releases", "input": { "label": "${step_1.labels[0].id}", "fmt": "json", "inc": "artist-credits", "limit": 100 }, "note": "Browse releases on this label." }
+      ]
+    },
+    {
+      "description": "Resolve a Spotify URL to a MusicBrainz entity",
+      "steps": [
+        { "tool": "lookup_url_by_resource", "input": { "resource": "https://open.spotify.com/artist/4Z8W4fKeB5YxbusRsdQVPb", "fmt": "json", "inc": "artist-rels" }, "note": "Find which artist links to this Spotify URL." }
+      ]
+    }
+  ],
+
+  "knowledge": {
+    "domain": "Music metadata (MusicBrainz)",
+    "system_context": "MusicBrainz is an open music encyclopedia with a strict entity hierarchy:\n\nArtist -> Release Group -> Release -> Medium -> Track -> Recording\n\nKey entities: Artist (person/group), Release Group (abstract album concept), Release (specific edition), Medium (disc/side), Track (position on medium), Recording (unique audio, carries ISRCs), Work (composition, carries ISWCs), Label, Event, Place, Area (geography, ISO codes), Series, Genre, URL.\n\nThree core API operations:\n- Lookup (GET /entity/{mbid}): One entity by MBID. inc= for related data, CAPPED AT 25 linked entities.\n- Browse (GET /entity?linked_entity={mbid}): ALL linked entities, fully paginated (limit+offset). Use when 25-cap is insufficient.\n- Search (GET /entity?query=...): Lucene full-text search with ranked results.\n\nCritical quirks:\n1. inc= on lookup caps at 25 linked entities. Always use browse for complete lists.\n2. Browse release paging: 500-track ceiling per page. Increment offset by actual count, not limit.\n3. fmt=json must be passed as query param or Accept header. XML is default.\n4. User-Agent header MANDATORY. Generic agents get HTTP 403.\n5. Rate limit: 1 req/sec. Exceeding -> HTTP 503 or IP ban.\n6. Relationships: inc= like 'artist-rels', 'url-rels'. For sub-entity rels: 'recording-level-rels', 'work-level-rels'.\n7. type= and status= filters only affect responses that include releases or release-groups.\n8. Search uses Lucene syntax: field:value, AND/OR/NOT, wildcards (*/?), fuzzy (~), phrases.\n9. Same recording can appear across many releases — it's the audio, not the physical track.\n10. Works = compositions (songs), distinct from recordings (performances). Link via work-rels.",
+    "workflows": [
+      {
+        "name": "artist_discography",
+        "trigger": "When a user asks for an artist's albums, discography, or complete releases.",
+        "steps": ["search_artists to resolve name to MBID", "browse_release_groups with artist= and type=album for full discography", "browse_releases with release-group= for all editions of an album", "lookup_release with inc=recordings+artist-credits for tracklist"],
+        "interpretation": "Release groups are album concepts; releases are specific editions. Always browse release-groups first."
+      },
+      {
+        "name": "track_identification",
+        "trigger": "When a user has a song name or ISRC and wants to identify it.",
+        "steps": ["If ISRC: lookup_isrc", "If name: search_recordings", "lookup_recording with inc=releases+artists+isrcs+work-rels"],
+        "interpretation": "Multiple recordings may share a title. Use disambiguation, artist-credit, and first-release-date to identify."
+      }
+    ],
+    "glossary": {
+      "MBID": "MusicBrainz Identifier — UUID uniquely identifying any entity.",
+      "Release Group": "Abstract grouping of releases (the 'album concept').",
+      "Release": "A specific edition — pressing, remaster, or digital release.",
+      "Recording": "Unique audio entity. Same recording across many tracks/releases.",
+      "Track": "Numbered entry on a medium, links to a recording.",
+      "Medium": "Physical disc or digital container within a release.",
+      "Work": "Distinct composition, independent of any recording. Carries ISWCs.",
+      "Artist Credit": "Credited name(s) including join phrases ('feat.', '&').",
+      "ISRC": "International Standard Recording Code — 12-char code for sound recordings.",
+      "ISWC": "International Standard Musical Work Code — identifies compositions.",
+      "Disc ID": "Hash from CD table of contents.",
+      "Lucene Query Syntax": "field:value, AND/OR/NOT, wildcards, fuzzy, phrases.",
+      "inc parameter": "Include param for additional linked data. Multiple values joined with '+'.",
+      "Disambiguation": "Short comment differentiating identically-named entities.",
+      "CD Stub": "Minimal release entry from disc ID submission, not yet linked to full data.",
+      "Secondary Type": "Additional classification: Compilation, Live, Soundtrack, Remix, etc."
+    }
+  }
+}
