@@ -215,7 +215,9 @@ export async function installToClaudeDesktop(
   // Use the absolute path to this CLI so it works from any cwd
   const resolvedSource = source.startsWith("http") ? source : resolve(source);
 
-  const args = ["toolspec", "connect", resolvedSource];
+  // Use npx tsx with the local CLI source until the package is published on npm
+  const cliPath = new URL("../cli/index.ts", import.meta.url).pathname;
+  const args = ["tsx", cliPath, "connect", resolvedSource];
   if (userAgent) {
     args.push("--user-agent", userAgent);
   }
