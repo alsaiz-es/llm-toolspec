@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { describe, it, expect } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { ToolSpec } from "../src/sdk/loader.js";
 import { createMcpServer, installToClaudeDesktop } from "../src/generators/mcp.js";
 
@@ -70,14 +71,16 @@ describe("MCP proxy generator", () => {
     const result = await client.callTool({
       name: "search_artists",
       arguments: { query: "radiohead", fmt: "json", limit: 1 },
-    });
+    }) as CallToolResult;
 
     expect(result.isError).not.toBe(true);
     expect(result.content).toHaveLength(1);
+    const item = result.content[0];
+    expect(item.type).toBe("text");
 
-    const content = result.content[0] as { type: string; text: string };
-    expect(content.type).toBe("text");
-    expect(() => JSON.parse(content.text)).not.toThrow();
+    if (item.type === "text") {
+      expect(() => JSON.parse(item.text)).not.toThrow();
+    }
 
     await server.close();
   });
@@ -88,11 +91,13 @@ describe("MCP proxy generator", () => {
     const result = await client.callTool({
       name: "nonexistent_tool",
       arguments: {},
-    });
+    }) as CallToolResult;
 
     expect(result.isError).toBe(true);
-    const content = result.content[0] as { type: string; text: string };
-    expect(content.text).toContain("Tool not found");
+    const errItem = result.content[0];
+    if (errItem.type === "text") {
+      expect(errItem.text).toContain("Tool not found");
+    }
 
     await server.close();
   });
@@ -103,14 +108,16 @@ describe("MCP proxy generator", () => {
     const result = await client.callTool({
       name: "lookup_artist",
       arguments: { mbid: "a74b1b7f-71a5-4011-9441-d0b5e4122711", fmt: "json" },
-    });
+    }) as CallToolResult;
 
     expect(result.content).toHaveLength(1);
-    const content = result.content[0] as { type: string; text: string };
-    expect(content.type).toBe("text");
+    const lookupItem = result.content[0];
+    expect(lookupItem.type).toBe("text");
 
-    const data = JSON.parse(content.text);
-    expect(data.name).toBe("Radiohead");
+    if (lookupItem.type === "text") {
+      const data = JSON.parse(lookupItem.text);
+      expect(data.name).toBe("Radiohead");
+    }
 
     await server.close();
   });
