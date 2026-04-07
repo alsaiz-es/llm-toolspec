@@ -149,7 +149,7 @@ describe("installToClaudeDesktop", () => {
 
     const raw = JSON.parse(await readFile(configPath, "utf-8"));
     expect(raw.mcpServers["toolspec-musicbrainz"]).toBeDefined();
-    expect(raw.mcpServers["toolspec-musicbrainz"].command).toBe("npx");
+    expect(raw.mcpServers["toolspec-musicbrainz"].command).toBe("node");
     expect(raw.mcpServers["toolspec-musicbrainz"].args).toContain("connect");
 
     const sourcePath = raw.mcpServers["toolspec-musicbrainz"].args.at(-1) as string;
